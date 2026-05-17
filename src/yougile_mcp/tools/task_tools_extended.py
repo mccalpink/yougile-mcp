@@ -6,7 +6,7 @@ Additional task operations (update, chat subscribers).
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import tasks
@@ -14,6 +14,7 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def update_task_tool(
+    workspace: str,
     task_id: str,
     title: str = None,
     description: str = None,
@@ -115,7 +116,7 @@ async def update_task_tool(
         if not task_data:
             raise ValidationError("At least one field must be provided for update")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.update_task(client, task_id, task_data)
             
         if ctx:
@@ -136,14 +137,14 @@ async def update_task_tool(
         raise
 
 
-async def get_task_chat_subscribers_tool(task_id: str, ctx: Context) -> List[models.User]:
+async def get_task_chat_subscribers_tool(workspace: str, task_id: str, ctx: Context) -> List[models.User]:
     """Get list of users subscribed to task chat."""
     try:
         await ctx.info(f"Fetching chat subscribers for task: {task_id}")
-        
+
         task_id = validate_uuid(task_id, "task_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_task_chat_subscribers(client, task_id)
             
         subscribers = [models.User(**user) for user in result]
@@ -163,18 +164,19 @@ async def get_task_chat_subscribers_tool(task_id: str, ctx: Context) -> List[mod
 
 
 async def update_task_chat_subscribers_tool(
-    task_id: str, 
-    subscribers: List[str], 
+    workspace: str,
+    task_id: str,
+    subscribers: List[str],
     ctx: Context
 ) -> Dict[str, Any]:
     """Update task chat subscribers list."""
     try:
         await ctx.info(f"Updating chat subscribers for task: {task_id}")
-        
+
         task_id = validate_uuid(task_id, "task_id")
         subscribers = [validate_uuid(user_id, "user_id") for user_id in subscribers]
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.update_task_chat_subscribers(client, task_id, subscribers)
             
         await ctx.info(f"✅ Successfully updated {len(subscribers)} chat subscribers")

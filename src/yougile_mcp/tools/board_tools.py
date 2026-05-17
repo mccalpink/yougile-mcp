@@ -6,7 +6,7 @@ Board management and workflows (4 endpoints).
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import boards
@@ -14,6 +14,7 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_boards_tool(
+    workspace: str,
     project_id: Optional[str] = None,
     title: Optional[str] = None,
     limit: int = 50,
@@ -40,7 +41,7 @@ async def list_boards_tool(
         if title:
             await ctx.info(f"Filtering by title: {title}")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.get_boards(
                 client,
                 project_id=project_id,
@@ -67,6 +68,7 @@ async def list_boards_tool(
 
 
 async def create_board_tool(
+    workspace: str,
     title: str,
     project_id: str,
     workflow_id: str = None,
@@ -89,7 +91,7 @@ async def create_board_tool(
             workflow_id = validate_uuid(workflow_id, "workflow_id")
             board_data["workflowId"] = workflow_id
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.create_board(client, board_data)
             
         created_entity = models.CreatedEntity(**result)
@@ -108,14 +110,14 @@ async def create_board_tool(
         raise
 
 
-async def get_board_tool(board_id: str, ctx: Context) -> models.Board:
+async def get_board_tool(workspace: str, board_id: str, ctx: Context) -> models.Board:
     """Get detailed information about a specific board."""
     try:
         await ctx.info(f"Fetching board details: {board_id}")
-        
+
         board_id = validate_uuid(board_id, "board_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.get_board(client, board_id)
             
         board = models.Board(**result)
@@ -135,6 +137,7 @@ async def get_board_tool(board_id: str, ctx: Context) -> models.Board:
 
 
 async def update_board_tool(
+    workspace: str,
     board_id: str,
     title: str = None,
     workflow_id: str = None,
@@ -160,7 +163,7 @@ async def update_board_tool(
         if not board_data:
             raise ValidationError("At least one field must be provided for update")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             # Update board (returns minimal response with just ID)
             await boards.update_board(client, board_id, board_data)
             

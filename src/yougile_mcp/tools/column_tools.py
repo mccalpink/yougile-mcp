@@ -6,7 +6,7 @@ Column operations and board structure management (4 endpoints).
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import columns
@@ -14,6 +14,7 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_columns_tool(
+    workspace: str,
     board_id: Optional[str] = None,
     ctx: Context = None
 ) -> List[Dict[str, Any]]:
@@ -29,7 +30,7 @@ async def list_columns_tool(
         else:
             await ctx.info("Fetching all columns from YouGile...")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.get_columns(client, board_id=board_id)
             
         await ctx.info(f"✅ Successfully retrieved {len(result)} columns")
@@ -47,6 +48,7 @@ async def list_columns_tool(
 
 
 async def create_column_tool(
+    workspace: str,
     title: str,
     board_id: str,
     color: int = None,
@@ -70,7 +72,7 @@ async def create_column_tool(
                 raise ValidationError("Color must be between 1 and 16")
             column_data["color"] = color
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.create_column(client, column_data)
             
         await ctx.info(f"✅ Successfully created column: {title}")
@@ -87,14 +89,14 @@ async def create_column_tool(
         raise
 
 
-async def get_column_tool(column_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_column_tool(workspace: str, column_id: str, ctx: Context) -> Dict[str, Any]:
     """Get detailed information about a specific column."""
     try:
         await ctx.info(f"Fetching column details: {column_id}")
-        
+
         column_id = validate_uuid(column_id, "column_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.get_column(client, column_id)
             
         await ctx.info(f"✅ Successfully retrieved column: {result.get('title', column_id)}")
@@ -112,6 +114,7 @@ async def get_column_tool(column_id: str, ctx: Context) -> Dict[str, Any]:
 
 
 async def update_column_tool(
+    workspace: str,
     column_id: str,
     title: str = None,
     color: int = None,
@@ -138,7 +141,7 @@ async def update_column_tool(
         if not column_data:
             raise ValidationError("At least one field must be provided for update")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.update_column(client, column_id, column_data)
             
         await ctx.info(f"✅ Successfully updated column: {result.get('title', column_id)}")

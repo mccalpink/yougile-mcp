@@ -6,19 +6,19 @@ User management and invitations (5 endpoints).
 from typing import List, Dict, Any
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import users
 from ...utils.validation import validate_uuid, validate_email, validate_non_empty_string
 
 
-async def list_users_tool(ctx: Context) -> List[models.User]:
+async def list_users_tool(workspace: str, ctx: Context) -> List[models.User]:
     """Get list of all users in the company."""
     try:
         await ctx.info("Fetching users from YouGile...")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await users.get_users(client)
             
         user_list = [models.User(**user) for user in result]
@@ -35,8 +35,9 @@ async def list_users_tool(ctx: Context) -> List[models.User]:
 
 
 async def invite_user_tool(
-    email: str, 
-    first_name: str, 
+    workspace: str,
+    email: str,
+    first_name: str,
     last_name: str,
     role: str = "user",
     departments: List[str] = None,
@@ -64,7 +65,7 @@ async def invite_user_tool(
             "departments": departments or []
         }
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await users.invite_user(client, user_data)
             
         user = models.User(**result)
@@ -83,14 +84,14 @@ async def invite_user_tool(
         raise
 
 
-async def get_user_tool(user_id: str, ctx: Context) -> models.User:
+async def get_user_tool(workspace: str, user_id: str, ctx: Context) -> models.User:
     """Get detailed information about a specific user."""
     try:
         await ctx.info(f"Fetching user details: {user_id}")
-        
+
         user_id = validate_uuid(user_id, "user_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await users.get_user(client, user_id)
             
         user = models.User(**result)
@@ -110,6 +111,7 @@ async def get_user_tool(user_id: str, ctx: Context) -> models.User:
 
 
 async def update_user_tool(
+    workspace: str,
     user_id: str,
     first_name: str = None,
     last_name: str = None,
@@ -154,7 +156,7 @@ async def update_user_tool(
         if not user_data:
             raise ValidationError("At least one field must be provided for update")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             # Update user (returns minimal response with just ID)
             await users.update_user(client, user_id, user_data)
             
@@ -177,14 +179,14 @@ async def update_user_tool(
         raise
 
 
-async def remove_user_tool(user_id: str, ctx: Context) -> Dict[str, Any]:
+async def remove_user_tool(workspace: str, user_id: str, ctx: Context) -> Dict[str, Any]:
     """Remove user from the company."""
     try:
         await ctx.info(f"Removing user: {user_id}")
-        
+
         user_id = validate_uuid(user_id, "user_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await users.delete_user(client, user_id)
             
         await ctx.info(f"Successfully removed user: {user_id}")

@@ -24,15 +24,17 @@ class AuthManager:
         """Get current company ID."""
         return self._company_id
     
-    def set_credentials(self, api_key: str, company_id: str) -> None:
-        """Set API credentials."""
+    def set_credentials(self, api_key: str, company_id: Optional[str] = None) -> None:
+        """Set API credentials.
+
+        company_id is optional — it is required only for /auth/* endpoints
+        (key creation, key listing). Normal data calls work with api_key alone.
+        """
         if not api_key or not api_key.strip():
             raise ValidationError("API key cannot be empty")
-        if not company_id or not company_id.strip():
-            raise ValidationError("Company ID cannot be empty")
-        
+
         self._api_key = api_key.strip()
-        self._company_id = company_id.strip()
+        self._company_id = company_id.strip() if company_id and company_id.strip() else None
     
     def get_auth_headers(self) -> Dict[str, str]:
         """Get authentication headers for API requests."""
@@ -53,7 +55,11 @@ class AuthManager:
         }
     
     def is_authenticated(self) -> bool:
-        """Check if authentication is configured."""
+        """Check if an API key is configured (sufficient for data endpoints)."""
+        return bool(self._api_key)
+
+    def can_reinit(self) -> bool:
+        """Check if we have enough info (company_id) to regenerate the key."""
         return bool(self._api_key and self._company_id)
     
     def clear_credentials(self) -> None:

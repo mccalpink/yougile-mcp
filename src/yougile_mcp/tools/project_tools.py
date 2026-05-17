@@ -6,23 +6,17 @@ Project management and operations (4 endpoints).
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import projects
 from ...utils.validation import validate_uuid, validate_non_empty_string
-from ._auth_helper import ensure_authenticated
-
-
-async def list_projects_tool(ctx: Context) -> List[models.Project]:
+async def list_projects_tool(workspace: str, ctx: Context) -> List[models.Project]:
     """Get list of all projects in the company."""
     try:
         await ctx.info("Fetching projects from YouGile...")
-        
-        # Ensure authentication is initialized
-        await ensure_authenticated(ctx)
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.get_projects(client)
             
         project_list = [models.Project(**project) for project in result]
@@ -39,6 +33,7 @@ async def list_projects_tool(ctx: Context) -> List[models.Project]:
 
 
 async def create_project_tool(
+    workspace: str,
     title: str,
     users: Dict[str, str] = None,
     workflow_id: str = None,
@@ -68,7 +63,7 @@ async def create_project_tool(
             workflow_id = validate_uuid(workflow_id, "workflow_id")
             project_data["workflowId"] = workflow_id
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.create_project(client, project_data)
             
         created_entity = models.CreatedEntity(**result)
@@ -87,14 +82,14 @@ async def create_project_tool(
         raise
 
 
-async def get_project_tool(project_id: str, ctx: Context) -> models.Project:
+async def get_project_tool(workspace: str, project_id: str, ctx: Context) -> models.Project:
     """Get detailed information about a specific project."""
     try:
         await ctx.info(f"Fetching project details: {project_id}")
-        
+
         project_id = validate_uuid(project_id, "project_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.get_project(client, project_id)
             
         project = models.Project(**result)
@@ -114,6 +109,7 @@ async def get_project_tool(project_id: str, ctx: Context) -> models.Project:
 
 
 async def update_project_tool(
+    workspace: str,
     project_id: str,
     title: str = None,
     users: Dict[str, str] = None,
@@ -149,7 +145,7 @@ async def update_project_tool(
         if not project_data:
             raise ValidationError("At least one field must be provided for update")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             # Update project (returns minimal response with just ID)
             await projects.update_project(client, project_id, project_data)
             

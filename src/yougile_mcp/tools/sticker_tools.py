@@ -5,7 +5,7 @@ String and Sprint sticker operations.
 
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import stickers
@@ -13,6 +13,7 @@ from ...utils.validation import validate_uuid
 
 
 async def list_string_stickers_tool(
+    workspace: str,
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
@@ -23,7 +24,7 @@ async def list_string_stickers_tool(
         if ctx:
             await ctx.info(f"Fetching string stickers (limit: {limit}, offset: {offset})...")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await stickers.get_string_stickers(client, limit, offset, include_deleted)
             
         # Extract content from paginated response
@@ -43,15 +44,15 @@ async def list_string_stickers_tool(
         raise
 
 
-async def get_string_sticker_tool(sticker_id: str, ctx: Context = None) -> Dict[str, Any]:
+async def get_string_sticker_tool(workspace: str, sticker_id: str, ctx: Context = None) -> Dict[str, Any]:
     """Get detailed information about a specific string sticker including its states."""
     try:
         if ctx:
             await ctx.info(f"Fetching string sticker details: {sticker_id}")
-        
+
         sticker_id = validate_uuid(sticker_id, "sticker_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await stickers.get_string_sticker(client, sticker_id)
             
         if ctx:
@@ -73,8 +74,9 @@ async def get_string_sticker_tool(sticker_id: str, ctx: Context = None) -> Dict[
 
 
 async def get_string_sticker_state_tool(
-    sticker_id: str, 
-    state_id: str, 
+    workspace: str,
+    sticker_id: str,
+    state_id: str,
     ctx: Context = None
 ) -> Dict[str, Any]:
     """Get information about a specific state of a string sticker."""
@@ -88,7 +90,7 @@ async def get_string_sticker_state_tool(
             raise ValidationError("state_id is required", field="state_id")
         state_id = state_id.strip()
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await stickers.get_string_sticker_state(client, sticker_id, state_id)
             
         if ctx:
@@ -110,17 +112,18 @@ async def get_string_sticker_state_tool(
 
 
 async def decode_task_stickers_tool(
-    stickers_dict: Dict[str, str], 
+    workspace: str,
+    stickers_dict: Dict[str, str],
     ctx: Context = None
 ) -> Dict[str, Dict[str, Any]]:
     """Decode task stickers dictionary into readable sticker and state information."""
     try:
         if ctx:
             await ctx.info(f"Decoding {len(stickers_dict)} task stickers...")
-        
+
         decoded_stickers = {}
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             for sticker_id, state_id in stickers_dict.items():
                 try:
                     # Get sticker information

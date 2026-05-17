@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 from mcp.server.fastmcp import Context
 from ...core import models
-from ...core import auth
+from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import tasks
@@ -15,6 +15,7 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_task_summaries_tool(
+    workspace: str,
     limit: int = 50,
     offset: int = 0,
     ctx: Context = None
@@ -29,7 +30,7 @@ async def list_task_summaries_tool(
         if ctx:
             await ctx.info(f"Fetching task list from YouGile (limit: {limit}, offset: {offset})...")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_task_list(client, limit=limit, offset=offset)
             
         if ctx:
@@ -47,6 +48,7 @@ async def list_task_summaries_tool(
 
 
 async def list_tasks_tool(
+    workspace: str,
     column_id: Optional[str] = None,
     assigned_to: Optional[str] = None,
     title: Optional[str] = None,
@@ -83,7 +85,7 @@ async def list_tasks_tool(
             if ctx:
                 await ctx.info(f"Filtering by title: {title}")
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_tasks(
                 client,
                 column_id=column_id,
@@ -113,6 +115,7 @@ async def list_tasks_tool(
 
 
 async def create_task_tool(
+    workspace: str,
     title: str,
     column_id: str,
     description: str = None,
@@ -200,7 +203,7 @@ async def create_task_tool(
         if archived is not None:
             task_data["archived"] = archived
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.create_task(client, task_data)
             
         if ctx:
@@ -221,15 +224,15 @@ async def create_task_tool(
         raise
 
 
-async def get_task_tool(task_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_task_tool(workspace: str, task_id: str, ctx: Context) -> Dict[str, Any]:
     """Get detailed information about a specific task."""
     try:
         if ctx:
             await ctx.info(f"Fetching task details: {task_id}")
-        
+
         task_id = validate_uuid(task_id, "task_id")
-        
-        async with YouGileClient(auth.auth_manager) as client:
+
+        async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_task(client, task_id)
             
         if ctx:
@@ -251,6 +254,7 @@ async def get_task_tool(task_id: str, ctx: Context) -> Dict[str, Any]:
 
 
 async def get_tasks_by_date_tool(
+    workspace: str,
     assigned_to: Optional[str] = None,
     created_by: Optional[str] = None,
     target_date: Optional[str] = None,
@@ -297,7 +301,7 @@ async def get_tasks_by_date_tool(
         # If filtering by created_by, we need to get more tasks since API doesn't support this filter
         fetch_limit = limit if assigned_to else 5000  # Get more tasks if filtering by created_by
         
-        async with YouGileClient(auth.auth_manager) as client:
+        async with YouGileClient(registry.get(workspace)) as client:
             while len(all_tasks) < fetch_limit:
                 current_limit = min(batch_size, fetch_limit - len(all_tasks))
                 

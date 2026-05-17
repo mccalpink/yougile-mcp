@@ -34,6 +34,12 @@ async def list_boards_tool(
         offset: Number of boards to skip (default: 0)
         include_deleted: Include deleted boards (default: False)
         verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, projectId, stickers} per board.
+        _meta.omitted_fields lists what was dropped.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching boards from YouGile (limit: {limit}, offset: {offset})...")
@@ -141,6 +147,11 @@ async def get_board_tool(
     Args:
         board_id: Board UUID.
         verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, projectId, stickers}.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching board details: {board_id}")

@@ -1,6 +1,8 @@
 import threading
 import pytest
-from src.core.session_state import get_active, set_active, clear_active
+from unittest.mock import MagicMock
+from src.core.session_state import get_active, set_active, clear_active, resolve_workspace
+from src.core.exceptions import WorkspaceNotConfiguredError
 
 
 class TestGetActiveDefault:
@@ -62,3 +64,62 @@ class TestThreadSafety:
 
         assert not errors
         assert len(results) == 10 * 50
+
+
+class FakeRegistry:
+    def __init__(self, slugs):
+        self._slugs = slugs
+
+    def slugs(self):
+        return self._slugs
+
+
+class TestResolveWorkspace:
+    def setup_method(self):
+        self.registry = FakeRegistry(["default", "main", "team"])
+
+    def test_explicit_wins_over_session(self):
+        set_active(200, "main")
+        ctx = MagicMock()
+        ctx.session = object()  # id() будет уникальным
+        # Явный workspace передан → возвращаем его
+        result = resolve_workspace("team", ctx, self.registry)
+        assert result == "team"
+
+    def test_explicit_wins_when_session_also_set(self):
+        # Явный workspace передан → возвращаем его (session не важен)
+        result = resolve_workspace("main", None, self.registry)
+        assert result == "main"
+
+    def test_explicit_invalid_raises(self):
+        with pytest.raises(WorkspaceNotConfiguredError):
+            resolve_workspace("nonexistent", None, self.registry)
+
+    def test_none_workspace_no_ctx_returns_default(self):
+        result = resolve_workspace(None, None, self.registry)
+        assert result == "default"
+
+    def test_none_workspace_no_session_active_returns_default(self):
+        ctx = MagicMock()
+        ctx.session = object()  # нет set_active для этого id
+        result = resolve_workspace(None, ctx, self.registry)
+        assert result == "default"
+
+    def test_session_active_used_when_no_explicit(self):
+        # Создаём объект сессии, запоминаем его id
+        session_obj = object()
+        sid = id(session_obj)
+        set_active(sid, "team")
+        ctx = MagicMock()
+        ctx.session = session_obj
+        result = resolve_workspace(None, ctx, self.registry)
+        assert result == "team"
+
+    def test_session_active_invalid_slug_raises(self):
+        session_obj = object()
+        sid = id(session_obj)
+        set_active(sid, "ghost_workspace")
+        ctx = MagicMock()
+        ctx.session = session_obj
+        with pytest.raises(WorkspaceNotConfiguredError):
+            resolve_workspace(None, ctx, self.registry)

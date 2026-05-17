@@ -45,8 +45,25 @@ class ValidationError(YouGileError):
 
 class NotFoundError(YouGileError):
     """Raised when requested resource is not found."""
-    
+
     def __init__(self, message: str, resource_type: str = None, resource_id: str = None):
         super().__init__(message, status_code=404)
         self.resource_type = resource_type
         self.resource_id = resource_id
+
+
+class WorkspaceNotConfiguredError(ValidationError):
+    """Вызывается когда тул запрашивает workspace slug без настроенного API-ключа."""
+
+    def __init__(self, slug: str, available: list = None):
+        if available is not None:
+            msg = (
+                f"Workspace '{slug}' не настроен. "
+                f"Доступные: {sorted(available) or '(нет)'}. "
+                f"Установите YOUGILE_KEY_{slug.upper()}=... в .env."
+            )
+        else:
+            msg = slug  # allow passing full message string directly
+        super().__init__(msg, field="workspace")
+        self.slug = slug if available is not None else ""
+        self.available = sorted(available) if available is not None else []

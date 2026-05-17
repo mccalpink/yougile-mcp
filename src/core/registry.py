@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from .auth import AuthManager
-from .exceptions import ValidationError
+from .exceptions import ValidationError, WorkspaceNotConfiguredError
 
 _KEY_RE = re.compile(r"^YOUGILE_KEY_(.+)$")
 _LABEL_RE = re.compile(r"^YOUGILE_LABEL_(.+)$")
@@ -57,19 +57,6 @@ def _load_env_with_dotenv() -> dict:
     merged.update(os.environ)
     return merged
 
-
-class WorkspaceNotConfiguredError(ValidationError):
-    """Raised when a tool requests a workspace slug that has no API key configured."""
-
-    def __init__(self, slug: str, available: list[str]):
-        msg = (
-            f"Workspace '{slug}' is not configured. "
-            f"Available workspaces: {sorted(available) or '(none)'}. "
-            f"Set YOUGILE_KEY_{slug.upper()}=<api-key> in .env."
-        )
-        super().__init__(msg, field="workspace")
-        self.slug = slug
-        self.available = sorted(available)
 
 
 @dataclass

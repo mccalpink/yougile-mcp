@@ -100,32 +100,82 @@ class YouGileClient:
         raise YouGileError("Max retries exceeded")
     
     def _handle_response(self, response: httpx.Response) -> Dict[str, Any]:
-        """Handle HTTP response and convert errors to exceptions."""
+        """Handle HTTP response and convert errors to exceptions.
+
+        Error messages are augmented with actionable hints so the LLM can
+        self-correct without an extra round-trip to read docs.
+        """
         if response.status_code == 200 or response.status_code == 201:
             try:
                 return response.json()
             except ValueError:
                 return {"success": True, "data": response.text}
-        
+
         # Handle error responses
         error_data = {}
         try:
             error_data = response.json()
         except ValueError:
             error_data = {"error": response.text or f"HTTP {response.status_code}"}
-        
-        error_message = error_data.get("error", f"HTTP {response.status_code}")
-        
+
+        # YouGile responses often carry both "error" and "message"; prefer
+        # whichever is set, falling back to the HTTP status.
+        api_error = error_data.get("error") or error_data.get("message") or f"HTTP {response.status_code}"
+        path = response.request.url.path if response.request else ""
+
         if response.status_code == 401:
-            raise AuthenticationError(error_message)
+            hint = (
+                "Authentication failed. Check the YOUGILE_KEY_<WORKSPACE> env "
+                "var for the workspace you targeted (or YOUGILE_API_KEY for "
+                "the legacy 'default' slug); the key may have been revoked, "
+                "rotated, or never set. Use list_workspaces to confirm which "
+                "slugs are configured."
+            )
+            raise AuthenticationError(f"{api_error}. {hint}")
         elif response.status_code == 403:
-            raise AuthorizationError(error_message)
+            hint = (
+                "Permission denied. The API key targeting this workspace "
+                "lacks access to the requested resource (project / board / "
+                "user). Verify the key owner's role with get_me."
+            )
+            raise AuthorizationError(f"{api_error}. {hint}")
         elif response.status_code == 404:
-            raise NotFoundError(error_message)
+            hint = (
+                "Resource not found. If you expect it to exist, retry the "
+                "matching list_* call with include_deleted=true (tasks, "
+                "boards, columns, webhooks all support soft-delete), or "
+                "verify the workspace slug is correct."
+            )
+            raise NotFoundError(f"{api_error}. {hint}")
         elif response.status_code == 429:
-            raise RateLimitError(error_message)
+            hint = (
+                "Rate limit exceeded (50 req/min per company). Wait ~60s "
+                "before retrying. Avoid loops that call get_string_sticker / "
+                "get_string_sticker_state per item — cache list_string_stickers."
+            )
+            raise RateLimitError(f"{api_error}. {hint}")
+        elif response.status_code == 400 and "/tasks" in path:
+            hint = (
+                "Bad request to /tasks. Common causes: "
+                "(1) deadline missing required blockedPoints=[] and links=[] "
+                "(use set_task_deadline to auto-populate); "
+                "(2) color value not in enum (must be one of task-primary, "
+                "task-gray, task-red, task-pink, task-yellow, task-green, "
+                "task-turquoise, task-blue, task-violet); "
+                "(3) subtasks array contains non-UUID strings; "
+                "(4) assigned array contains non-UUID strings; "
+                "(5) stickers value not a string state-id (use '-' to detach, "
+                "'empty' to clear)."
+            )
+            raise YouGileError(f"{api_error}. {hint}", status_code=400, details=error_data)
+        elif response.status_code == 400:
+            hint = (
+                "Bad request. The API rejected the payload — check required "
+                "fields and value formats against the OpenAPI schema."
+            )
+            raise YouGileError(f"{api_error}. {hint}", status_code=400, details=error_data)
         else:
-            raise YouGileError(error_message, status_code=response.status_code, details=error_data)
+            raise YouGileError(api_error, status_code=response.status_code, details=error_data)
     
     # Convenience methods
     async def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

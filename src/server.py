@@ -3,409 +3,823 @@ YouGile MCP Server
 
 Main entry point for the YouGile Model Context Protocol server.
 Registers all tools, resources, and prompts for YouGile API access.
+
+Tool descriptions follow the canonical pattern:
+  Purpose. USE WHEN: ... DO NOT USE: ... RETURNS: ... RELATED: ...
+Parameter hints use Annotated[T, Field(description=...)] so the JSON
+schema delivered to the LLM contains formats, defaults, and cross-refs.
+Each tool also declares ToolAnnotations explicitly — defaults in the MCP
+spec are pessimistic, so we set readOnly/destructive/idempotent/openWorld
+on every tool.
 """
 
 import asyncio
-from typing import Optional
-from mcp.server.fastmcp import FastMCP, Context
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.types import ToolAnnotations
+from pydantic import Field
+
 from .config import settings
 from .core import auth
 from .core.client import YouGileClient
-from .core.models import TaskColor, MessageReact
+from .core.models import MessageReact, TaskColor
 from .api import auth as auth_api
 from .yougile_mcp.tools.auth_tools import (
-    get_companies_tool, 
     create_api_key_tool,
-    list_api_keys_tool,
     delete_api_key_tool,
+    get_companies_tool,
+    list_api_keys_tool,
 )
 from .yougile_mcp.tools.user_tools import (
-    list_users_tool,
-    invite_user_tool,
-    get_user_tool,
-    update_user_tool,
-    remove_user_tool,
     get_me_tool,
+    get_user_tool,
+    invite_user_tool,
+    list_users_tool,
+    remove_user_tool,
+    update_user_tool,
 )
 from .yougile_mcp.tools.project_tools import (
-    list_projects_tool,
     create_project_tool,
     get_project_tool,
+    list_projects_tool,
     update_project_tool,
 )
 from .yougile_mcp.tools.board_tools import (
-    list_boards_tool,
     create_board_tool,
     get_board_tool,
+    list_boards_tool,
     update_board_tool,
 )
 from .yougile_mcp.tools.column_tools import (
-    list_columns_tool,
     create_column_tool,
     get_column_tool,
+    list_columns_tool,
     update_column_tool,
 )
 from .yougile_mcp.tools.chat_tools import (
-    list_group_chats_tool,
-    create_group_chat_tool,
-    get_group_chat_tool,
-    get_chat_messages_tool,
-    send_chat_message_tool,
-    get_chat_message_tool,
-    update_chat_message_tool,
-    get_task_comments_tool,
     add_task_comment_tool,
+    create_group_chat_tool,
+    get_chat_message_tool,
+    get_chat_messages_tool,
+    get_group_chat_tool,
+    get_task_comments_tool,
+    list_group_chats_tool,
+    send_chat_message_tool,
+    update_chat_message_tool,
 )
 from .yougile_mcp.tools.task_tools import (
-    list_task_summaries_tool,
-    list_tasks_tool,
     create_task_tool,
     get_task_tool,
     get_tasks_by_date_tool,
+    list_task_summaries_tool,
+    list_tasks_tool,
 )
 from .yougile_mcp.tools.task_tools_extended import (
-    update_task_tool,
     get_task_chat_subscribers_tool,
     update_task_chat_subscribers_tool,
+    update_task_tool,
 )
 from .yougile_mcp.tools.sticker_tools import (
-    list_string_stickers_tool,
-    get_string_sticker_tool,
-    get_string_sticker_state_tool,
-    get_sprint_sticker_state_tool,
     decode_task_stickers_tool,
+    get_sprint_sticker_state_tool,
+    get_string_sticker_state_tool,
+    get_string_sticker_tool,
+    list_string_stickers_tool,
 )
 from .yougile_mcp.tools.webhook_tools import (
-    list_webhooks_tool,
     create_webhook_tool,
+    list_webhooks_tool,
     update_webhook_tool,
 )
-from .yougile_mcp.tools.file_tools import (
-    upload_file_tool,
-)
+from .yougile_mcp.tools.file_tools import upload_file_tool
 from .yougile_mcp.tools.crm_tools import (
     create_crm_contact_tool,
     find_crm_contact_by_external_id_tool,
 )
 from .yougile_mcp.resources.api_docs import (
-    get_api_overview,
-    get_project_info,
-    get_task_info,
     get_api_endpoints,
+    get_api_overview,
+    get_html_guide,
 )
 from .yougile_mcp.prompts.workflow_prompts import (
-    setup_new_project_prompt,
     create_task_workflow_prompt,
-    sprint_planning_prompt,
     daily_standup_prompt,
+    deadline_crunch_management_prompt,
+    onboarding_new_team_member_prompt,
     project_health_check_prompt,
+    retrospective_analysis_prompt,
+    setup_new_project_prompt,
+    sprint_planning_prompt,
+    task_escalation_prompt,
     user_productivity_report_prompt,
     weekly_team_report_prompt,
-    task_escalation_prompt,
-    onboarding_new_team_member_prompt,
-    deadline_crunch_management_prompt,
-    html_formatting_guide_prompt,
-    api_usage_guide_prompt,
-    retrospective_analysis_prompt,
 )
 
-# Create MCP server instance
+
+# ---------------------------------------------------------------------------
+# Annotation presets
+# ---------------------------------------------------------------------------
+#
+# MCP spec defaults assume the worst (non-readonly, destructive, non-idempotent,
+# open-world). We override every tool with one of the presets below so the
+# client can make informed UX decisions (auto-approve reads, prompt on writes).
+
+# Pure reads against the YouGile API.
+ANN_READ = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+# Mutating but additive (create, send, invite, upload).
+ANN_CREATE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+
+# Mutating, repeating with the same args is safe (re-applies same state).
+ANN_UPDATE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+# Mutating, removes data (soft-delete, revoke, remove user).
+ANN_DELETE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+
 mcp = FastMCP(name=settings.server_name)
 
-# Register MCP Tools
-@mcp.tool()
-async def get_companies(login: str, password: str, ctx: Context) -> list:
-    """Get list of companies available to user for API access."""
+
+# Reusable Annotated types ---------------------------------------------------
+
+WorkspaceParam = Annotated[
+    str,
+    Field(
+        description=(
+            "Workspace slug from list_workspaces (maps to one YouGile company "
+            "API key). Use 'default' for the legacy YOUGILE_API_KEY."
+        ),
+        examples=["default", "main", "team"],
+    ),
+]
+
+UUIDParam = Annotated[
+    str,
+    Field(
+        description="YouGile UUID (8-4-4-4-12 hex format).",
+        examples=["086866d2-a230-4a4a-8225-e3a9d847b6d0"],
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Authorization & workspaces
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def get_companies(
+    login: Annotated[str, Field(description="YouGile account email.")],
+    password: Annotated[str, Field(description="YouGile account password (plain text — handled in-memory only).")],
+    ctx: Context,
+) -> list:
+    """List YouGile companies the given account can access.
+
+    USE WHEN: bootstrapping a new workspace and you need the company UUID
+    before calling create_api_key.
+    DO NOT USE: in normal operation — the server already holds API keys for
+    pre-configured workspaces (see list_workspaces).
+    RETURNS: list of {id, name} objects, one per company.
+    """
     return await get_companies_tool(login, password, ctx)
 
-@mcp.tool()
-async def create_api_key(login: str, password: str, company_id: str, ctx: Context) -> dict:
-    """Create API key for accessing YouGile API.""" 
+
+@mcp.tool(annotations=ANN_CREATE)
+async def create_api_key(
+    login: Annotated[str, Field(description="YouGile account email.")],
+    password: Annotated[str, Field(description="YouGile account password.")],
+    company_id: Annotated[str, Field(description="Company UUID from get_companies.")],
+    ctx: Context,
+) -> dict:
+    """Provision a new API key for a company.
+
+    USE WHEN: setting up a new workspace from scratch.
+    DO NOT USE: as part of regular workflow — keys persist on YouGile side
+    until explicitly revoked (max 30 per account).
+    RETURNS: {key: "..."} — store securely in the server env.
+    RELATED: list_api_keys, delete_api_key.
+    """
     return await create_api_key_tool(login, password, company_id, ctx)
 
-@mcp.tool()
-async def list_api_keys(login: str, password: str, company_id: str = None, ctx: Context = None) -> list:
-    """Get list of existing API keys. Useful for managing keys (max 30 per account)."""
+
+@mcp.tool(annotations=ANN_READ)
+async def list_api_keys(
+    login: Annotated[str, Field(description="YouGile account email.")],
+    password: Annotated[str, Field(description="YouGile account password.")],
+    company_id: Annotated[
+        Optional[str],
+        Field(description="Optional company UUID filter."),
+    ] = None,
+    ctx: Context = None,
+) -> list:
+    """List API keys associated with the account (max 30 per account).
+
+    USE WHEN: auditing existing keys before creating a new one.
+    RETURNS: list of {key, companyId, ...} entries.
+    """
     return await list_api_keys_tool(login, password, company_id, ctx)
 
-@mcp.tool()
-async def delete_api_key(api_key: str, ctx: Context) -> dict:
-    """Delete an API key. Useful for cleaning up old keys."""
+
+@mcp.tool(annotations=ANN_DELETE)
+async def delete_api_key(
+    api_key: Annotated[str, Field(description="Full API key string to revoke.")],
+    ctx: Context,
+) -> dict:
+    """Revoke an API key.
+
+    USE WHEN: rotating credentials or cleaning up old keys.
+    DESTRUCTIVE: any session using this key will fail with 401 afterwards.
+    RETURNS: {success: bool}.
+    """
     return await delete_api_key_tool(api_key, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_READ)
 async def list_workspaces(ctx: Context = None) -> list[dict]:
-    """List YouGile workspaces (companies) this server is configured for.
+    """List workspaces this server is configured for.
 
-    Each workspace = one YouGile company API key declared via
-    YOUGILE_KEY_<SLUG> in the server environment. Pass the returned `slug`
-    as the `workspace` parameter to any other tool to route the call to
-    that company. Use 'default' (also exposed via legacy YOUGILE_API_KEY)
-    as the fallback workspace.
-
-    Returns metadata only — no API keys or other secrets are exposed.
+    USE WHEN: starting any flow that needs a workspace slug, when you are
+    unsure which slug the user means, or to verify a slug is configured.
+    RETURNS: list of {slug, company_id, label} — never returns API keys.
+    RELATED: every other tool accepts the returned slug as `workspace`.
     """
     from .core import registry as _registry
+
     if ctx:
         await ctx.info(f"Listing {len(_registry.slugs())} configured workspace(s)")
     return [w.to_dict() for w in _registry.list_workspaces()]
 
 
-@mcp.tool()
+@mcp.tool(annotations=ANN_READ)
 async def get_user_context(ctx: Context = None) -> str:
-    """Get user-configured context and default settings for YouGile operations."""
+    """Return server-side user context (default project/board hints, if configured).
+
+    USE WHEN: at the start of a session to discover any default
+    project/board the user has pre-registered, so you can skip list_* calls.
+    RETURNS: free-form string (the YOUGILE_USER_CONTEXT env value) or a
+    fallback message if nothing is configured.
+    """
     try:
         if ctx:
-            await ctx.info("Retrieving user context settings...")
-        
+            await ctx.info("Retrieving user context settings")
+
         if settings.user_context:
-            if ctx:
-                await ctx.info("✅ User context found")
             return settings.user_context
-        else:
-            if ctx:
-                await ctx.info("ℹ️ No user context configured")
-            return "Пользовательские настройки не заданы. Используйте стандартный подход с получением списка проектов и досок."
-            
-    except Exception as e:
+        return (
+            "No user context configured. Discover projects/boards/columns via "
+            "list_projects, list_boards, list_columns."
+        )
+    except Exception as exc:
         if ctx:
-            await ctx.error(f"Error retrieving user context: {str(e)}")
-        return "Ошибка получения пользовательских настроек."
+            await ctx.error(f"Error retrieving user context: {exc}")
+        return "Error retrieving user context settings."
 
 
-# User Management Tools
-@mcp.tool()
-async def list_users(workspace: str = "default", ctx: Context = None) -> list:
-    """Get list of all users in the company.
+# ---------------------------------------------------------------------------
+# Users
+# ---------------------------------------------------------------------------
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+@mcp.tool(annotations=ANN_READ)
+async def list_users(
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> list:
+    """List all users in the workspace company.
+
+    USE WHEN: mapping a name/email to a user_id before assignment, or for
+    roster snapshots.
+    RETURNS: lightweight user records: id, email, realName, isAdmin, status.
+    Does NOT include department membership or custom fields — call get_user
+    for the full profile.
     """
     return await list_users_tool(workspace, ctx)
 
-@mcp.tool()
-async def invite_user(workspace: str = "default", email: str = None, first_name: str = None, last_name: str = None, role: str = "user", departments: list = None, ctx: Context = None) -> dict:
-    """Invite a new user to the company.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_CREATE)
+async def invite_user(
+    workspace: WorkspaceParam = "default",
+    email: Annotated[Optional[str], Field(description="Invitee email address.")] = None,
+    first_name: Annotated[Optional[str], Field(description="Invitee first name.")] = None,
+    last_name: Annotated[Optional[str], Field(description="Invitee last name.")] = None,
+    role: Annotated[
+        str,
+        Field(description="Initial role: 'admin' or 'user'."),
+    ] = "user",
+    departments: Annotated[
+        Optional[List[str]],
+        Field(description="List of department UUIDs to attach the new user to."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Invite a user to the workspace company by email.
+
+    USE WHEN: onboarding a new team member.
+    SIDE EFFECT: YouGile sends an email invitation; consumes a license seat.
+    RETURNS: {id} of the created user record.
     """
     return await invite_user_tool(workspace, email, first_name, last_name, role, departments or [], ctx)
 
-@mcp.tool()
-async def get_user(workspace: str = "default", user_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific user.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_user(
+    workspace: WorkspaceParam = "default",
+    user_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get full profile of one user.
+
+    USE WHEN: you need fields not returned by list_users (full department
+    list, status timestamp, custom data).
+    RETURNS: full UserDto.
     """
     return await get_user_tool(workspace, user_id, ctx)
 
-@mcp.tool()
-async def update_user(workspace: str = "default", user_id: str = None, first_name: str = None, last_name: str = None, role: str = None, departments: list = None, ctx: Context = None) -> dict:
-    """Update user information.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_user(
+    workspace: WorkspaceParam = "default",
+    user_id: UUIDParam = None,
+    first_name: Annotated[Optional[str], Field(description="New first name.")] = None,
+    last_name: Annotated[Optional[str], Field(description="New last name.")] = None,
+    role: Annotated[Optional[str], Field(description="New role: 'admin' or 'user'.")] = None,
+    departments: Annotated[
+        Optional[List[str]],
+        Field(description="Replacement department UUIDs (full replacement, not append)."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Update a user's name, role, or department membership.
+
+    USE WHEN: changing role or org-structure assignment.
+    NOTE: only the fields you pass are updated. `departments` REPLACES the
+    existing list — read get_user first if you only want to add one.
+    Email cannot be changed via API.
     """
     return await update_user_tool(workspace, user_id, first_name, last_name, role, departments, ctx)
 
-@mcp.tool()
-async def remove_user(workspace: str = "default", user_id: str = None, ctx: Context = None) -> dict:
-    """Remove user from the company.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_DELETE)
+async def remove_user(
+    workspace: WorkspaceParam = "default",
+    user_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Remove a user from the workspace company.
+
+    DESTRUCTIVE: removes access; existing task assignments persist with a
+    dangling user_id reference. Frees a license seat.
+    USE WHEN: offboarding. Always confirm with the human first.
     """
     return await remove_user_tool(workspace, user_id, ctx)
 
-# Project Management Tools
-@mcp.tool()
-async def list_projects(workspace: str = "default", ctx: Context = None) -> list:
-    """Get list of all projects in the company.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_me(
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> dict:
+    """Return the user account that owns this workspace's API key.
+
+    USE WHEN: you need the calling user's UUID (e.g. to filter
+    list_tasks(assigned_to=me) without asking the user).
+    """
+    return await get_me_tool(workspace, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Projects
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_projects(
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> list:
+    """List all projects in the workspace.
+
+    USE WHEN: you do not yet know the project_id. The result is small (most
+    companies have <50 projects) — safe to call on demand.
+    RETURNS: list of {id, title, users, timestamp}.
     """
     return await list_projects_tool(workspace, ctx)
 
-@mcp.tool()
-async def create_project(workspace: str = "default", title: str = None, users: dict = None, workflow_id: str = None, ctx: Context = None) -> dict:
+
+@mcp.tool(annotations=ANN_CREATE)
+async def create_project(
+    workspace: WorkspaceParam = "default",
+    title: Annotated[Optional[str], Field(description="Project title.")] = None,
+    users: Annotated[
+        Optional[Dict[str, str]],
+        Field(
+            description=(
+                "Initial user roles: {user_id: role}. Built-in roles: 'admin', "
+                "'worker', 'observer'. Custom role slugs also accepted."
+            ),
+        ),
+    ] = None,
+    workflow_id: Annotated[
+        Optional[str],
+        Field(description="Optional workflow UUID to attach."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
     """Create a new project.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    RETURNS: {id} only — call get_project(project_id) for full details.
+    RELATED: create_board to add boards after creation.
     """
     return await create_project_tool(workspace, title, users, workflow_id, ctx)
 
-@mcp.tool()
-async def get_project(workspace: str = "default", project_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific project.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_project(
+    workspace: WorkspaceParam = "default",
+    project_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one project's full details including users map."""
     return await get_project_tool(workspace, project_id, ctx)
 
-@mcp.tool()
-async def update_project(workspace: str = "default", project_id: str = None, title: str = None, users: dict = None, workflow_id: str = None, ctx: Context = None) -> dict:
-    """Update project information.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_project(
+    workspace: WorkspaceParam = "default",
+    project_id: UUIDParam = None,
+    title: Annotated[Optional[str], Field(description="New title.")] = None,
+    users: Annotated[
+        Optional[Dict[str, str]],
+        Field(
+            description=(
+                "Replacement {user_id: role} map. REPLACES existing — read "
+                "get_project first if you only want to add a user."
+            ),
+        ),
+    ] = None,
+    workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
+    ctx: Context = None,
+) -> dict:
+    """Update project title, users, or workflow.
+
+    NOTE: `users` is a full replacement; preserve existing members by
+    merging with get_project output.
     """
     return await update_project_tool(workspace, project_id, title, users, workflow_id, ctx)
 
-# Board Management Tools
-@mcp.tool()
-async def list_boards(workspace: str = "default", project_id: str = None, title: str = None, limit: int = 50, offset: int = 0, include_deleted: bool = False, ctx: Context = None) -> list:
-    """Get list of boards with optional filtering.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Boards
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_boards(
+    workspace: WorkspaceParam = "default",
+    project_id: Annotated[
+        Optional[str],
+        Field(description="Optional project UUID to scope the list."),
+    ] = None,
+    title: Annotated[
+        Optional[str],
+        Field(description="Partial title filter."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    offset: Annotated[int, Field(description="Page offset, default 0.")] = 0,
+    include_deleted: Annotated[bool, Field(description="Include soft-deleted boards.")] = False,
+    ctx: Context = None,
+) -> list:
+    """List boards, optionally filtered by project or title.
+
+    RETURNS: list of {id, title, projectId, stickers}.
     """
     return await list_boards_tool(workspace, project_id, title, limit, offset, include_deleted, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_CREATE)
 async def create_board(
-    workspace: str = "default",
-    title: str = None,
-    project_id: str = None,
-    workflow_id: str = None,
-    stickers: dict = None,
+    workspace: WorkspaceParam = "default",
+    title: Annotated[Optional[str], Field(description="Board title.")] = None,
+    project_id: Annotated[Optional[str], Field(description="Parent project UUID (required).")] = None,
+    workflow_id: Annotated[Optional[str], Field(description="Optional workflow UUID.")] = None,
+    stickers: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description=(
+                "Sticker visibility on the board (StickersDto). Keys: timer, "
+                "deadline, stopwatch, timeTracking, assignee, repeat (all bool). "
+                "Plus 'custom': {custom_sticker_uuid: bool}. "
+                "Example: {'deadline': true, 'timeTracking': true, "
+                "'custom': {'<uuid>': true}}."
+            ),
+        ),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
-    """Create a new board in a project.
+    """Create a board inside a project.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    stickers: Board sticker visibility (StickersDto).
-    Keys (all booleans): timer, deadline, stopwatch, timeTracking, assignee, repeat.
-    Plus `custom`: {customStickerUuid: bool, ...}.
-    Example: {"deadline": true, "timeTracking": true, "custom": {"<uuid>": true}}
+    RETURNS: {id} only — call get_board afterwards for full details.
+    RELATED: create_column to add columns; create_task to populate them.
     """
     return await create_board_tool(
         workspace, title, project_id, workflow_id, stickers=stickers, ctx=ctx
     )
 
-@mcp.tool()
-async def get_board(workspace: str = "default", board_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific board.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
-    return await get_board_tool(workspace, board_id, ctx)
-
-@mcp.tool()
-async def update_board(
-    workspace: str = "default",
-    board_id: str = None,
-    title: str = None,
-    workflow_id: str = None,
-    stickers: dict = None,
-    deleted: bool = None,
+@mcp.tool(annotations=ANN_READ)
+async def get_board(
+    workspace: WorkspaceParam = "default",
+    board_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
-    """Update board information.
+    """Get one board's full configuration."""
+    return await get_board_tool(workspace, board_id, ctx)
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
 
-    stickers: Board sticker visibility (StickersDto). See create_board.
-    deleted: Soft-delete the board (True) or restore (False).
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_board(
+    workspace: WorkspaceParam = "default",
+    board_id: UUIDParam = None,
+    title: Annotated[Optional[str], Field(description="New title.")] = None,
+    workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
+    stickers: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="StickersDto — see create_board for shape."),
+    ] = None,
+    deleted: Annotated[
+        Optional[bool],
+        Field(description="True = soft-delete; False = restore previously-deleted board."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Update a board's title, sticker visibility, or soft-delete state.
+
+    NOTE: only the fields you pass are touched.
     """
     return await update_board_tool(
-        workspace,
-        board_id,
-        title,
-        workflow_id,
-        stickers=stickers,
-        deleted=deleted,
-        ctx=ctx,
+        workspace, board_id, title, workflow_id, stickers=stickers, deleted=deleted, ctx=ctx
     )
 
-# Column Management Tools
-@mcp.tool()
-async def list_columns(workspace: str = "default", board_id: str = None, ctx: Context = None) -> list:
-    """Get list of columns with optional filtering by board.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Columns
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_columns(
+    workspace: WorkspaceParam = "default",
+    board_id: Annotated[
+        Optional[str],
+        Field(description="Board UUID filter; omit to list all columns in the workspace."),
+    ] = None,
+    ctx: Context = None,
+) -> list:
+    """List columns, optionally scoped to a board.
+
+    USE WHEN: you have a board_id but need the column_id (e.g. before
+    create_task or update_task(column_id=...)).
     """
     return await list_columns_tool(workspace, board_id, ctx)
 
-@mcp.tool()
-async def create_column(workspace: str = "default", title: str = None, board_id: str = None, color: int = None, ctx: Context = None) -> dict:
-    """Create a new column in a board. Color must be between 1-16.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_CREATE)
+async def create_column(
+    workspace: WorkspaceParam = "default",
+    title: Annotated[Optional[str], Field(description="Column title.")] = None,
+    board_id: Annotated[Optional[str], Field(description="Parent board UUID.")] = None,
+    color: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "YouGile palette index, 1-16. Sample mapping: 1=gray, 2=red, "
+                "3=orange, 4=yellow, 5=green, 6=teal, 7=blue, 8=purple."
+            ),
+            ge=1,
+            le=16,
+        ),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Create a column inside a board.
+
+    RETURNS: {id} only.
     """
     return await create_column_tool(workspace, title, board_id, color, ctx)
 
-@mcp.tool()
-async def get_column(workspace: str = "default", column_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific column.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_column(
+    workspace: WorkspaceParam = "default",
+    column_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one column's details."""
     return await get_column_tool(workspace, column_id, ctx)
 
-@mcp.tool()
-async def update_column(workspace: str = "default", column_id: str = None, title: str = None, color: int = None, ctx: Context = None) -> dict:
-    """Update column information. Color must be between 1-16.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_column(
+    workspace: WorkspaceParam = "default",
+    column_id: UUIDParam = None,
+    title: Annotated[Optional[str], Field(description="New title.")] = None,
+    color: Annotated[
+        Optional[int],
+        Field(description="New palette index, 1-16.", ge=1, le=16),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Update a column's title or color."""
     return await update_column_tool(workspace, column_id, title, color, ctx)
 
-# Task Management Tools
-@mcp.tool()
-async def list_task_summaries(workspace: str = "default", limit: int = 50, offset: int = 0, ctx: Context = None) -> list:
-    """Get list of task summaries with pagination.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_task_summaries(
+    workspace: WorkspaceParam = "default",
+    limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
+    offset: Annotated[int, Field(description="Page offset.")] = 0,
+    ctx: Context = None,
+) -> list:
+    """List minimal task summaries (id + title) with pagination.
+
+    USE WHEN: you need a roster and full task payloads would waste tokens.
+    RELATED: list_tasks for the full task body.
     """
     return await list_task_summaries_tool(workspace, limit, offset, ctx)
 
-@mcp.tool()
-async def list_tasks(workspace: str = "default", column_id: str = None, assigned_to: str = None, title: str = None, limit: int = 50, offset: int = 0, include_deleted: bool = False, ctx: Context = None) -> list:
-    """Get detailed list of tasks with optional filtering.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def list_tasks(
+    workspace: WorkspaceParam = "default",
+    column_id: Annotated[
+        Optional[str],
+        Field(description="Column UUID filter (server-side)."),
+    ] = None,
+    assigned_to: Annotated[
+        Optional[str],
+        Field(description="User UUID filter (server-side). Use get_me to find your own ID."),
+    ] = None,
+    title: Annotated[
+        Optional[str],
+        Field(description="Partial title filter (server-side)."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
+    offset: Annotated[int, Field(description="Page offset.")] = 0,
+    include_deleted: Annotated[
+        bool,
+        Field(description="True to include soft-deleted tasks."),
+    ] = False,
+    ctx: Context = None,
+) -> list:
+    """List full task records with optional filters.
+
+    USE WHEN: you need task bodies (description, stickers, deadlines).
+    NOTE: the API does NOT support filtering by sticker value, deadline
+    range, or creation date — those must be applied client-side after
+    fetching. For date filtering, prefer get_tasks_by_date.
     """
     return await list_tasks_tool(workspace, column_id, assigned_to, title, limit, offset, include_deleted, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_CREATE)
 async def create_task(
-    workspace: str = "default",
-    title: str = None,
-    column_id: str = None,
-    description: str = None,
-    assigned_users: list = None,
-    deadline: dict = None,
-    time_tracking: dict = None,
-    stickers: dict = None,
-    subtasks: list = None,
-    checklists: list = None,
-    completed: bool = None,
-    archived: bool = None,
-    color: Optional[TaskColor] = None,
-    stopwatch: dict = None,
-    timer: dict = None,
-    deal: dict = None,
-    id_task_common: str = None,
-    id_task_project: str = None,
-    extension_data: dict = None,
+    workspace: WorkspaceParam = "default",
+    title: Annotated[Optional[str], Field(description="Task title (required).")] = None,
+    column_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Column UUID. OPTIONAL: omitting it creates a 'floating' task "
+                "(no board location) — useful as a standalone sub-task. Get "
+                "column UUIDs via list_columns(board_id=...)."
+            ),
+        ),
+    ] = None,
+    description: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "HTML body. Use <br> for line breaks (NOT \\n). See resource "
+                "yougile://guides/html for the full formatter."
+            ),
+        ),
+    ] = None,
+    assigned_users: Annotated[
+        Optional[List[str]],
+        Field(description="List of assignee user UUIDs. Look up via list_users."),
+    ] = None,
+    deadline: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description=(
+                "Deadline sticker {deadline: <ms_timestamp>, withTime: bool, "
+                "blockedPoints: [], links: [], startDate?: <ms>}. "
+                "blockedPoints and links are required even when empty — prefer "
+                "set_task_deadline which auto-fills them."
+            ),
+        ),
+    ] = None,
+    time_tracking: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Time tracking sticker {plan: hours, work: hours}."),
+    ] = None,
+    stickers: Annotated[
+        Optional[Dict[str, str]],
+        Field(
+            description=(
+                "Custom stickers {sticker_id: state_id}. Resolve IDs via "
+                "list_string_stickers + get_string_sticker. Special values: "
+                "'-' detaches the sticker, 'empty' clears the value."
+            ),
+        ),
+    ] = None,
+    subtasks: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "List of child task UUIDs (not nested dicts). Create children "
+                "with separate create_task calls first, then reference their IDs."
+            ),
+        ),
+    ] = None,
+    checklists: Annotated[
+        Optional[List[Dict[str, Any]]],
+        Field(
+            description=(
+                "Checklist groups: [{title: str, items: [{title: str, "
+                "isCompleted: bool}, ...]}, ...]. Each item must include "
+                "isCompleted (defaults to False)."
+            ),
+        ),
+    ] = None,
+    completed: Annotated[Optional[bool], Field(description="Mark as completed on create.")] = None,
+    archived: Annotated[Optional[bool], Field(description="Create in archived state.")] = None,
+    color: Annotated[
+        Optional[TaskColor],
+        Field(description="Card colour on the board."),
+    ] = None,
+    stopwatch: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Stopwatch sticker {running: bool, seconds: int}."),
+    ] = None,
+    timer: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Timer sticker {running: bool, seconds: int}."),
+    ] = None,
+    deal: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="CRM deal payload (DealDataDto). Marks the task as a CRM deal."),
+    ] = None,
+    id_task_common: Annotated[
+        Optional[str],
+        Field(description="Human-readable cross-company task ID (e.g. 'ID-484')."),
+    ] = None,
+    id_task_project: Annotated[
+        Optional[str],
+        Field(description="Human-readable per-project task ID (e.g. 'DEV-484')."),
+    ] = None,
+    extension_data: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Free-form data used by YouGile extensions."),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
-    """Create a new task.
+    """Create a task.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    column_id: OPTIONAL — API allows tasks without a column (e.g. standalone subtasks).
-
-    🚨 CRITICAL: description parameter MUST be in HTML format!
-    - Use <br> for line breaks (NOT \\n)
-    - Use <b>text</b> for bold, <i>text</i> for italic
-    - Example: "Fix bug<br><br><b>Steps:</b><br>1. Check login<br>2. Fix error"
-    - Plain text will display incorrectly in YouGile interface!
-
-    📋 Checklists format:
-    - Structure: [{"title": "Checklist Name", "items": [{"title": "Item 1", "isCompleted": false}]}]
-    - Multiple checklists: [{"title": "Backend", "items": [...]}, {"title": "Frontend", "items": [...]}]
-    - Each item MUST have "isCompleted" field (boolean)
-
-    🎨 color: card color on the board, one of: task-primary, task-gray, task-red,
-    task-pink, task-yellow, task-green, task-turquoise, task-blue, task-violet.
-
-    🆔 id_task_common / id_task_project: human-readable IDs (e.g. "ID-484", "DEV-484").
+    USE WHEN: adding a new work item, sub-task, or CRM deal.
+    BEFORE: call list_columns(board_id) for column_id, list_users for
+    assignees, list_string_stickers + get_string_sticker for sticker IDs.
+    RETURNS: {id} only — call get_task for the full payload.
     """
     return await create_task_tool(
         workspace,
@@ -430,71 +844,132 @@ async def create_task(
         ctx=ctx,
     )
 
-@mcp.tool()
-async def get_task(workspace: str = "default", task_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific task.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_task(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one task's full payload (title, description, assigned, stickers, etc.)."""
     return await get_task_tool(workspace, task_id, ctx)
 
-@mcp.tool()
-async def get_tasks_by_date(workspace: str = "default", assigned_to: str = None, created_by: str = None, target_date: str = None, completed_only: bool = False, limit: int = 5000, ctx: Context = None) -> list:
-    """Get tasks filtered by date and completion status.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_tasks_by_date(
+    workspace: WorkspaceParam = "default",
+    assigned_to: Annotated[
+        Optional[str],
+        Field(description="User UUID — server-side filter (fast)."),
+    ] = None,
+    created_by: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "User UUID — client-side filter applied after fetch. Slow on "
+                "companies with > a few thousand tasks."
+            ),
+        ),
+    ] = None,
+    target_date: Annotated[
+        Optional[str],
+        Field(description="YYYY-MM-DD date. Defaults to today.", examples=["2026-05-17"]),
+    ] = None,
+    completed_only: Annotated[bool, Field(description="Restrict to completed tasks.")] = False,
+    limit: Annotated[int, Field(description="Max tasks fetched before client-side filtering.")] = 5000,
+    ctx: Context = None,
+) -> list:
+    """List tasks filtered by date and optional assignee / creator.
 
-    Examples:
-    - get_tasks_by_date(assigned_to="user-id") - all tasks assigned to user for today
-    - get_tasks_by_date(created_by="user-id") - all tasks created by user for today
-    - get_tasks_by_date(target_date="2024-01-15", completed_only=True) - completed tasks for specific date
-    - get_tasks_by_date(assigned_to="user-id", completed_only=True) - completed tasks by user for today
-    - get_tasks_by_date(created_by="user-id", target_date="2024-01-15") - tasks created by user on specific date
+    USE WHEN: building standup, productivity, or retrospective reports.
+    EXAMPLES:
+      get_tasks_by_date(assigned_to="<uid>") — today's tasks for a user.
+      get_tasks_by_date(target_date="2026-01-15", completed_only=True).
+      get_tasks_by_date(created_by="<uid>") — slow client-side filter.
     """
     return await get_tasks_by_date_tool(workspace, assigned_to, created_by, target_date, completed_only, limit, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_UPDATE)
 async def update_task(
-    workspace: str = "default",
-    task_id: str = None,
-    title: str = None,
-    description: str = None,
-    column_id: str = None,
-    assigned_users: list = None,
-    deadline: dict = None,
-    time_tracking: dict = None,
-    stickers: dict = None,
-    subtasks: list = None,
-    checklists: list = None,
-    completed: bool = None,
-    archived: bool = None,
-    deleted: bool = None,
-    color: Optional[TaskColor] = None,
-    stopwatch: dict = None,
-    timer: dict = None,
-    deal: dict = None,
-    id_task_common: str = None,
-    id_task_project: str = None,
-    extension_data: dict = None,
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    title: Annotated[Optional[str], Field(description="New title.")] = None,
+    description: Annotated[
+        Optional[str],
+        Field(description="HTML body (<br> for newlines). See yougile://guides/html."),
+    ] = None,
+    column_id: Annotated[
+        Optional[str],
+        Field(description="Move task to this column UUID. Pass '-' to detach from any column."),
+    ] = None,
+    assigned_users: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Replacement list of assignee UUIDs (REPLACES existing — read "
+                "get_task and merge if you want to add)."
+            ),
+        ),
+    ] = None,
+    deadline: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description=(
+                "Deadline sticker — see create_task. Prefer set_task_deadline. "
+                "Pass {'deleted': True} to remove the deadline."
+            ),
+        ),
+    ] = None,
+    time_tracking: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="{plan: hours, work: hours}. Pass {'deleted': True} to remove."),
+    ] = None,
+    stickers: Annotated[
+        Optional[Dict[str, str]],
+        Field(
+            description=(
+                "{sticker_id: state_id}. Use '-' to detach a sticker, 'empty' "
+                "to clear its value."
+            ),
+        ),
+    ] = None,
+    subtasks: Annotated[
+        Optional[List[str]],
+        Field(description="Replacement list of child task UUIDs (REPLACES existing)."),
+    ] = None,
+    checklists: Annotated[
+        Optional[List[Dict[str, Any]]],
+        Field(description="Replacement checklist groups — same shape as create_task."),
+    ] = None,
+    completed: Annotated[Optional[bool], Field(description="Mark as completed / reopen.")] = None,
+    archived: Annotated[Optional[bool], Field(description="Archive / unarchive.")] = None,
+    deleted: Annotated[
+        Optional[bool],
+        Field(
+            description=(
+                "True = soft-delete (hides from list_tasks unless "
+                "include_deleted=true). False = restore."
+            ),
+        ),
+    ] = None,
+    color: Annotated[Optional[TaskColor], Field(description="Card colour.")] = None,
+    stopwatch: Annotated[Optional[Dict[str, Any]], Field(description="Stopwatch sticker.")] = None,
+    timer: Annotated[Optional[Dict[str, Any]], Field(description="Timer sticker.")] = None,
+    deal: Annotated[Optional[Dict[str, Any]], Field(description="CRM deal payload.")] = None,
+    id_task_common: Annotated[Optional[str], Field(description="Cross-company human ID.")] = None,
+    id_task_project: Annotated[Optional[str], Field(description="Per-project human ID.")] = None,
+    extension_data: Annotated[Optional[Dict[str, Any]], Field(description="Extension data.")] = None,
     ctx: Context = None,
 ) -> dict:
-    """Update task information. ONLY the provided fields are updated.
+    """Update a task. Only passed fields are touched.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    🚨 CRITICAL: description parameter MUST be in HTML format!
-    - Use <br> for line breaks (NOT \\n)
-    - Use <b>text</b> for bold, <i>text</i> for italic
-    - Example: "Updated requirements<br><br><b>Changes:</b><br>• Added validation<br>• Fixed bugs"
-    - Plain text will display incorrectly in YouGile interface!
-
-    📋 Checklists format:
-    - Structure: [{"title": "Checklist Name", "items": [{"title": "Item 1", "isCompleted": false}]}]
-    - Multiple checklists: [{"title": "Backend", "items": [...]}, {"title": "Frontend", "items": [...]}]
-    - Each item MUST have "isCompleted" field (boolean)
-
-    column_id: pass "-" to remove task from any column.
-    color: see create_task.
+    USE WHEN: any single-field edit, status move, or soft-delete.
+    DESTRUCTIVE: list fields (assigned_users, subtasks, stickers,
+    checklists) are REPLACED, not merged. Read get_task and rebuild the
+    list if you want to add an item.
+    RELATED: delete_task is a shortcut for update_task(deleted=True);
+    set_task_deadline is a safer helper for deadlines.
     """
     return await update_task_tool(
         workspace,
@@ -521,543 +996,704 @@ async def update_task(
         ctx=ctx,
     )
 
-@mcp.tool()
-async def delete_task(workspace: str = "default", task_id: str = None, ctx: Context = None) -> dict:
-    """Delete a task (soft delete).
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_DELETE)
+async def delete_task(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Soft-delete a task (equivalent to update_task(deleted=True)).
+
+    USE WHEN: removing a task. Exists as an explicit alias so the intent is
+    visible in tool-call traces.
+    REVERSIBLE: update_task(task_id, deleted=False) restores. Deleted tasks
+    are hidden from list_tasks unless include_deleted=true is passed.
     """
     return await update_task_tool(workspace, task_id, deleted=True, ctx=ctx)
 
-@mcp.tool()
-async def set_task_deadline(workspace: str = "default", task_id: str = None, deadline_timestamp: int = None, start_date_timestamp: int = None, with_time: bool = True, ctx: Context = None) -> dict:
-    """Set task deadline sticker.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_UPDATE)
+async def set_task_deadline(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    deadline_timestamp: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Deadline as Unix timestamp in MILLISECONDS (13 digits). "
+                "Seconds (10 digits) are auto-promoted."
+            ),
+            examples=[1653029146646],
+        ),
+    ] = None,
+    start_date_timestamp: Annotated[
+        Optional[int],
+        Field(description="Optional start date as Unix ms. Seconds auto-promoted."),
+    ] = None,
+    with_time: Annotated[bool, Field(description="Show time alongside date in the UI.")] = True,
+    ctx: Context = None,
+) -> dict:
+    """Set or replace a task deadline sticker (safe wrapper).
 
-    Args:
-        task_id: ID of the task to set deadline for
-        deadline_timestamp: Deadline timestamp in MILLISECONDS (13 digits, e.g. 1653029146646)
-        start_date_timestamp: Optional start date timestamp in MILLISECONDS
-        with_time: Whether to display time on the sticker, or only date
+    USE WHEN: setting a deadline. Prefer this over update_task(deadline=...)
+    because it auto-fills the required blockedPoints=[] and links=[]
+    fields that the YouGile API rejects when missing.
+    RELATED: remove_task_sticker(sticker_type='deadline') to clear.
     """
-    # Auto-convert seconds to milliseconds if needed
-    if deadline_timestamp < 10000000000:  # Less than 10 digits = seconds
+    if deadline_timestamp < 10000000000:  # seconds → ms
         deadline_timestamp *= 1000
         if ctx:
-            await ctx.info(f"Auto-converted deadline timestamp to milliseconds: {deadline_timestamp}")
+            await ctx.info(f"Auto-converted deadline timestamp to ms: {deadline_timestamp}")
 
     deadline_data = {
         "deadline": deadline_timestamp,
         "withTime": with_time,
-        "blockedPoints": [],  # Required field
-        "links": []  # Required field
+        "blockedPoints": [],
+        "links": [],
     }
 
     if start_date_timestamp:
-        # Auto-convert start date if needed
         if start_date_timestamp < 10000000000:
             start_date_timestamp *= 1000
             if ctx:
-                await ctx.info(f"Auto-converted start date timestamp to milliseconds: {start_date_timestamp}")
+                await ctx.info(f"Auto-converted start date to ms: {start_date_timestamp}")
         deadline_data["startDate"] = start_date_timestamp
 
     return await update_task_tool(workspace, task_id, deadline=deadline_data, ctx=ctx)
 
-@mcp.tool()
-async def set_task_time_tracking(workspace: str = "default", task_id: str = None, planned_hours: int = None, actual_hours: int = None, ctx: Context = None) -> dict:
-    """Set task time tracking sticker.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
-    time_tracking_data = {}
-    if planned_hours is not None:
-        time_tracking_data["plan"] = planned_hours
-    if actual_hours is not None:
-        time_tracking_data["work"] = actual_hours
-    return await update_task_tool(workspace, task_id, time_tracking=time_tracking_data, ctx=ctx)
+@mcp.tool(annotations=ANN_DELETE)
+async def remove_task_sticker(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    sticker_type: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "What to remove: 'deadline' / 'timeTracking' for system "
+                "stickers, or a custom-sticker UUID for company stickers."
+            ),
+            examples=["deadline", "timeTracking", "086866d2-a230-4a4a-8225-e3a9d847b6d0"],
+        ),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Detach a sticker from a task.
 
-@mcp.tool()
-async def set_task_custom_stickers(workspace: str = "default", task_id: str = None, sticker_values: dict = None, ctx: Context = None) -> dict:
-    """Set custom stickers on task (sticker_id -> state_id mapping).
-
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
-    return await update_task_tool(workspace, task_id, stickers=sticker_values, ctx=ctx)
-
-@mcp.tool()
-async def remove_task_sticker(workspace: str = "default", task_id: str = None, sticker_type: str = None, ctx: Context = None) -> dict:
-    """Remove sticker from task by setting it to deleted/removed state.
-
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    USE WHEN: clearing a deadline, time-tracking, or custom-sticker value.
+    DESTRUCTIVE: removes the field from the task. To set a new value
+    instead, use update_task(stickers=...) or set_task_deadline.
     """
     if sticker_type == "deadline":
         return await update_task_tool(workspace, task_id, deadline={"deleted": True}, ctx=ctx)
-    elif sticker_type == "timeTracking":
+    if sticker_type == "timeTracking":
         return await update_task_tool(workspace, task_id, time_tracking={"deleted": True}, ctx=ctx)
-    else:
-        # For custom stickers, use "-" to detach
-        sticker_data = {sticker_type: "-"}
-        return await update_task_tool(workspace, task_id, stickers=sticker_data, ctx=ctx)
+    # Custom sticker — '-' detaches.
+    return await update_task_tool(workspace, task_id, stickers={sticker_type: "-"}, ctx=ctx)
 
-@mcp.tool()
-async def get_task_chat_subscribers(workspace: str = "default", task_id: str = None, ctx: Context = None) -> list:
-    """Get list of users subscribed to task chat.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_task_chat_subscribers(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    ctx: Context = None,
+) -> list:
+    """List user UUIDs subscribed to a task's chat (receive notifications)."""
     return await get_task_chat_subscribers_tool(workspace, task_id, ctx)
 
-@mcp.tool()
-async def update_task_chat_subscribers(workspace: str = "default", task_id: str = None, subscribers: list = None, ctx: Context = None) -> dict:
-    """Update task chat subscribers list.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_task_chat_subscribers(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    subscribers: Annotated[
+        Optional[List[str]],
+        Field(description="REPLACEMENT list of user UUIDs (full replacement, not append)."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Replace a task's chat subscriber list.
+
+    NOTE: this is a full replacement. To add a user, read
+    get_task_chat_subscribers first and append.
     """
     return await update_task_chat_subscribers_tool(workspace, task_id, subscribers, ctx)
 
-# String Stickers Management Tools
-@mcp.tool()
-async def list_string_stickers(workspace: str = "default", limit: int = 50, offset: int = 0, include_deleted: bool = False, ctx: Context = None) -> list:
-    """Get list of custom string stickers available in the company.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Stickers
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_string_stickers(
+    workspace: WorkspaceParam = "default",
+    limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    offset: Annotated[int, Field(description="Page offset.")] = 0,
+    include_deleted: Annotated[bool, Field(description="Include soft-deleted stickers.")] = False,
+    ctx: Context = None,
+) -> list:
+    """List custom string stickers defined in the company.
+
+    USE WHEN: you need to discover sticker_ids (e.g. 'Priority', 'Sprint')
+    before setting a sticker on a task.
+    RETURNS: list of {id, title, type, states} (states is a brief view —
+    call get_string_sticker for full state details).
     """
     return await list_string_stickers_tool(workspace, limit, offset, include_deleted, ctx)
 
-@mcp.tool()
-async def get_string_sticker(workspace: str = "default", sticker_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific string sticker including its states.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_string_sticker(
+    workspace: WorkspaceParam = "default",
+    sticker_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one string sticker including all its states.
+
+    USE WHEN: you have a sticker_id (from list_string_stickers) and need
+    state_ids — for example to set a 'Priority: High' value on a task.
     """
     return await get_string_sticker_tool(workspace, sticker_id, ctx)
 
-@mcp.tool()
-async def get_string_sticker_state(workspace: str = "default", sticker_id: str = None, state_id: str = None, ctx: Context = None) -> dict:
-    """Get information about a specific state of a string sticker.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_string_sticker_state(
+    workspace: WorkspaceParam = "default",
+    sticker_id: UUIDParam = None,
+    state_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one state of a string sticker (name, colour, icon)."""
     return await get_string_sticker_state_tool(workspace, sticker_id, state_id, ctx)
 
-@mcp.tool()
-async def decode_task_stickers(workspace: str = "default", stickers_dict: dict = None, ctx: Context = None) -> dict:
-    """Decode task stickers dictionary into readable sticker and state information.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_sprint_sticker_state(
+    workspace: WorkspaceParam = "default",
+    sticker_id: UUIDParam = None,
+    state_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one state of a sprint sticker (sprint interval)."""
+    return await get_sprint_sticker_state_tool(workspace, sticker_id, state_id, ctx)
 
-    Takes a dictionary of sticker_id -> state_id (like from task.stickers) and returns
-    readable names, colors, and icons for each sticker and its current state.
+
+@mcp.tool(annotations=ANN_READ)
+async def decode_task_stickers(
+    workspace: WorkspaceParam = "default",
+    stickers_dict: Annotated[
+        Optional[Dict[str, str]],
+        Field(description="{sticker_id: state_id} as found on a task.stickers field."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Resolve a {sticker_id: state_id} map to human-readable labels.
+
+    WARNING — N+1 API calls: this issues 2 requests per sticker (one for
+    the sticker, one for the state). YouGile rate-limits at 50 req/min
+    per company; for tasks with >5 stickers prefer caching the output of
+    list_string_stickers and resolving labels client-side.
     """
     return await decode_task_stickers_tool(workspace, stickers_dict, ctx)
 
-# Chat and Communication Tools
-@mcp.tool()
-async def list_group_chats(workspace: str = "default", ctx: Context = None) -> list:
-    """Get list of all group chats.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+# ---------------------------------------------------------------------------
+# Chats & comments
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def list_group_chats(
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> list:
+    """List standalone group chats (not bound to tasks)."""
     return await list_group_chats_tool(workspace, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_CREATE)
 async def create_group_chat(
-    workspace: str = "default",
-    title: str = None,
-    users: dict = None,
-    user_role_map: dict = None,
-    role_config_map: dict = None,
+    workspace: WorkspaceParam = "default",
+    title: Annotated[Optional[str], Field(description="Chat title.")] = None,
+    users: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="{user_id: {'notified': bool}} — required by API."),
+    ] = None,
+    user_role_map: Annotated[
+        Optional[Dict[str, str]],
+        Field(description="{user_id: role_slug} — required by API (e.g. 'owner', 'admin')."),
+    ] = None,
+    role_config_map: Annotated[
+        Optional[Dict[str, Any]],
+        Field(
+            description=(
+                "{role_slug: {editProperties, editAdmins, editUsers, sendMessages, "
+                "removeMessages, ...}} — required by API."
+            ),
+        ),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
-    """Create a new group chat. ALL of users/user_role_map/role_config_map
-    must be provided together for the chat to be functional.
+    """Create a group chat.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    Field shapes (CreateGroupChatDto):
-    - users: {userId: {"notified": true|false}}
-    - user_role_map: {userId: roleSlug}   e.g. {"...": "owner", "...": "admin"}
-    - role_config_map: {roleSlug: {editProperties, editAdmins, editUsers,
-                                   sendMessages, removeMessages, ...}}
-
-    Calling with only `title` is permitted but the server is likely to reject
-    it — provide all four fields together.
+    NOTE: YouGile requires title + users + user_role_map + role_config_map
+    together. Passing only title is likely to return 400.
+    RETURNS: {id} of the chat.
     """
     return await create_group_chat_tool(
-        workspace,
-        title,
-        users=users,
-        user_role_map=user_role_map,
-        role_config_map=role_config_map,
-        ctx=ctx,
+        workspace, title, users=users, user_role_map=user_role_map,
+        role_config_map=role_config_map, ctx=ctx,
     )
 
-@mcp.tool()
-async def get_group_chat(workspace: str = "default", chat_id: str = None, ctx: Context = None) -> dict:
-    """Get detailed information about a specific group chat.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_group_chat(
+    workspace: WorkspaceParam = "default",
+    chat_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one group chat's details."""
     return await get_group_chat_tool(workspace, chat_id, ctx)
 
-@mcp.tool()
-async def get_chat_messages(workspace: str = "default", chat_id: str = None, limit: int = 50, ctx: Context = None) -> list:
-    """Get messages from a chat (task comments or group chat messages).
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def get_chat_messages(
+    workspace: WorkspaceParam = "default",
+    chat_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Chat UUID. For task comments, pass the task_id — every task "
+                "has a chat with chat_id == task_id."
+            ),
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    ctx: Context = None,
+) -> list:
+    """List messages in a chat or task comment thread.
+
+    USE WHEN: reading task comments or a group chat history.
+    RELATED: get_task_comments is an alias for tasks.
     """
     return await get_chat_messages_tool(workspace, chat_id, limit, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_CREATE)
 async def send_chat_message(
-    workspace: str = "default",
-    chat_id: str = None,
-    text: str = None,
-    text_html: str = None,
-    label: str = None,
+    workspace: WorkspaceParam = "default",
+    chat_id: Annotated[
+        Optional[str],
+        Field(description="Chat UUID (= task_id for task comments)."),
+    ] = None,
+    text: Annotated[
+        Optional[str],
+        Field(description="Plain text body. Wrapped in <p>...</p> if text_html is not supplied."),
+    ] = None,
+    text_html: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "HTML body. Use <br> for newlines (see yougile://guides/html). "
+                "Server does NOT escape — sanitize untrusted input."
+            ),
+        ),
+    ] = None,
+    label: Annotated[
+        Optional[str],
+        Field(description="Short label / quick-link text. Defaults to 'Comment'."),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
-    """Send a message to a chat (add comment to task or send group chat message).
+    """Post a message to a chat or task comment thread.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    text: plain-text body of the message.
-    text_html: HTML body. If omitted, defaults to <p>{text}</p>. Pass your own
-               HTML (<br>, <b>, <i>, lists, etc.) for formatting. Not escaped
-               server-side — sanitize untrusted input.
-    label: short label / quick link shown with the message (default "Comment").
+    USE WHEN: commenting on a task or messaging a group chat.
+    RELATED: add_task_comment is an alias for tasks.
     """
     return await send_chat_message_tool(
-        workspace, chat_id, text, text_html=text_html, label=label, ctx=ctx
+        workspace, chat_id, text, text_html=text_html, label=label, ctx=ctx,
     )
 
-@mcp.tool()
-async def get_chat_message(workspace: str = "default", chat_id: str = None, message_id: str = None, ctx: Context = None) -> dict:
-    """Get a specific message from a chat.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_chat_message(
+    workspace: WorkspaceParam = "default",
+    chat_id: UUIDParam = None,
+    message_id: UUIDParam = None,
+    ctx: Context = None,
+) -> dict:
+    """Get one chat message by ID."""
     return await get_chat_message_tool(workspace, chat_id, message_id, ctx)
 
-@mcp.tool()
+
+@mcp.tool(annotations=ANN_UPDATE)
 async def update_chat_message(
-    workspace: str = "default",
-    chat_id: str = None,
-    message_id: str = None,
-    label: str = None,
-    react: Optional[MessageReact] = None,
-    delete: bool = False,
+    workspace: WorkspaceParam = "default",
+    chat_id: UUIDParam = None,
+    message_id: UUIDParam = None,
+    label: Annotated[Optional[str], Field(description="New label / quick-link text.")] = None,
+    react: Annotated[
+        Optional[MessageReact],
+        Field(description="Admin reaction emoji (enum of 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔)."),
+    ] = None,
+    delete: Annotated[bool, Field(description="True = soft-delete the message.")] = False,
     ctx: Context = None,
 ) -> dict:
     """Update message metadata: label, admin reaction, or soft-delete.
 
-    Note: API does NOT support editing message text — only metadata.
-    UpdateChatMessageDto fields: deleted, label, react.
-
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    label: new label / quick link text for the message.
-    react: admin reaction emoji. One of: 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔.
-    delete: if True, soft-deletes the message.
+    NOTE: the YouGile API does NOT support editing message text — only
+    metadata. UpdateChatMessageDto exposes only deleted/label/react.
     """
     return await update_chat_message_tool(
-        workspace, chat_id, message_id,
-        label=label, react=react, delete=delete, ctx=ctx,
+        workspace, chat_id, message_id, label=label, react=react, delete=delete, ctx=ctx,
     )
 
-# Task Comment Tools (convenient aliases)
-@mcp.tool()
-async def get_task_comments(workspace: str = "default", task_id: str = None, limit: int = 50, ctx: Context = None) -> list:
-    """Get comments for a specific task.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
+@mcp.tool(annotations=ANN_READ)
+async def get_task_comments(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    ctx: Context = None,
+) -> list:
+    """List comments on a task (alias for get_chat_messages(chat_id=task_id))."""
     return await get_task_comments_tool(workspace, task_id, limit, ctx)
 
-@mcp.tool()
-async def add_task_comment(workspace: str = "default", task_id: str = None, comment: str = None, ctx: Context = None) -> dict:
-    """Add a comment to a specific task.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    🚨 CRITICAL: comment parameter MUST be in HTML format!
-    - Use <br> for line breaks (NOT \\n)
-    - Use <b>text</b> for bold, <i>text</i> for italic
-    - Example: "Status update<br><br><b>Progress:</b><br>• Completed testing<br>• Ready for review"
-    - Plain text will display incorrectly in YouGile interface!
-    """
+@mcp.tool(annotations=ANN_CREATE)
+async def add_task_comment(
+    workspace: WorkspaceParam = "default",
+    task_id: UUIDParam = None,
+    comment: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "HTML body. Use <br> for newlines (see yougile://guides/html). "
+                "Plain text renders as a single line."
+            ),
+        ),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Post a comment on a task (alias for send_chat_message(chat_id=task_id))."""
     return await add_task_comment_tool(workspace, task_id, comment, ctx)
 
-# Webhook Tools
-@mcp.tool()
-async def list_webhooks(workspace: str = "default", limit: int = 50, offset: int = 0, include_deleted: bool = False, ctx: Context = None) -> list:
-    """List configured webhook subscriptions for the workspace.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------------------
 
-    NOTE: YouGile API does not paginate /webhooks server-side; pagination is
-    applied client-side after fetching the full list.
+
+@mcp.tool(annotations=ANN_READ)
+async def list_webhooks(
+    workspace: WorkspaceParam = "default",
+    limit: Annotated[int, Field(description="Page size (client-side, default 50).")] = 50,
+    offset: Annotated[int, Field(description="Page offset (client-side).")] = 0,
+    include_deleted: Annotated[bool, Field(description="Include soft-deleted webhooks.")] = False,
+    ctx: Context = None,
+) -> list:
+    """List webhook subscriptions for the workspace.
+
+    NOTE: YouGile does not paginate /webhooks server-side; the full list is
+    fetched and paginated client-side.
     """
     return await list_webhooks_tool(workspace, limit, offset, include_deleted, ctx)
 
-@mcp.tool()
-async def create_webhook(workspace: str = "default", url: str = None, event: str = None, filters: list = None, ctx: Context = None) -> dict:
+
+@mcp.tool(annotations=ANN_CREATE)
+async def create_webhook(
+    workspace: WorkspaceParam = "default",
+    url: Annotated[Optional[str], Field(description="HTTPS endpoint receiving the event POST.")] = None,
+    event: Annotated[
+        Optional[str],
+        Field(
+            description="Event pattern — exact ('task-created') or wildcard ('task-*', '.*').",
+            examples=["task-created", "task-updated", "chat-message"],
+        ),
+    ] = None,
+    filters: Annotated[
+        Optional[List[Dict[str, Any]]],
+        Field(
+            description=(
+                "List of {name, value} filters narrowing the scope (e.g. "
+                "[{'name': 'location', 'value': ['<board_uuid>']}]). REQUIRED "
+                "by API even if empty — pass [] for no filtering, but expect "
+                "very high traffic without filters."
+            ),
+        ),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
     """Create a webhook subscription.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    Args:
-        url: target URL that will receive the event POST.
-        event: e.g. "task-created", "task-*", ".*".
-        filters: list of {name, value} filter objects. Pass [] for no filtering
-            (the field is required by YouGile API even when empty).
+    BEST PRACTICE: always pass `filters` — an unfiltered webhook fires on
+    every event in the company.
     """
     return await create_webhook_tool(workspace, url, event, filters or [], ctx)
 
-@mcp.tool()
-async def update_webhook(workspace: str = "default", webhook_id: str = None, url: str = None, event: str = None, filters: list = None, disabled: bool = None, deleted: bool = False, ctx: Context = None) -> dict:
-    """Update or soft-delete a webhook subscription.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    Pass deleted=True to soft-delete, disabled=True to pause without removing.
-    """
+@mcp.tool(annotations=ANN_UPDATE)
+async def update_webhook(
+    workspace: WorkspaceParam = "default",
+    webhook_id: UUIDParam = None,
+    url: Annotated[Optional[str], Field(description="New target URL.")] = None,
+    event: Annotated[Optional[str], Field(description="New event pattern.")] = None,
+    filters: Annotated[Optional[List[Dict[str, Any]]], Field(description="Replacement filter list.")] = None,
+    disabled: Annotated[Optional[bool], Field(description="True = pause deliveries without deleting.")] = None,
+    deleted: Annotated[bool, Field(description="True = soft-delete the subscription.")] = False,
+    ctx: Context = None,
+) -> dict:
+    """Update or soft-delete a webhook subscription."""
     return await update_webhook_tool(workspace, webhook_id, url, event, filters, deleted, disabled, ctx)
 
-# File Tools
-@mcp.tool()
-async def upload_file(workspace: str = "default", path: str = None, filename: str = None, ctx: Context = None) -> dict:
-    """Upload a file from local filesystem to YouGile.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+# ---------------------------------------------------------------------------
+# Files
+# ---------------------------------------------------------------------------
 
-    Args:
-        path: absolute path to the file on the server filesystem.
-        filename: optional override for the name reported to YouGile.
 
-    Returns: {"result": "ok", "url": "/user-data/...", "fullUrl": "https://..."}
+@mcp.tool(annotations=ANN_CREATE)
+async def upload_file(
+    workspace: WorkspaceParam = "default",
+    path: Annotated[
+        Optional[str],
+        Field(description="Absolute path to the file on the server filesystem."),
+    ] = None,
+    filename: Annotated[
+        Optional[str],
+        Field(description="Optional override for the reported filename."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Upload a file from the server's filesystem to YouGile storage.
+
+    USE WHEN: attaching a file referenced by URL in a task description or
+    comment. Embed the returned URL via <a href="..."> in the HTML body.
+    RETURNS: {result, url, fullUrl}.
     """
     return await upload_file_tool(workspace, path, filename, ctx)
 
-# CRM Tools
-@mcp.tool()
-async def create_crm_contact(workspace: str = "default", project_id: str = None, title: str = None, position: str = None, phone: str = None, email: str = None, additional_phone: str = None, address: str = None, fields_extra: dict = None, ctx: Context = None) -> dict:
+
+# ---------------------------------------------------------------------------
+# CRM
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_CREATE)
+async def create_crm_contact(
+    workspace: WorkspaceParam = "default",
+    project_id: Annotated[Optional[str], Field(description="CRM project UUID.")] = None,
+    title: Annotated[Optional[str], Field(description="Contact display name.")] = None,
+    position: Annotated[Optional[str], Field(description="Job title / role.")] = None,
+    phone: Annotated[Optional[str], Field(description="Primary phone.")] = None,
+    email: Annotated[Optional[str], Field(description="Email address.")] = None,
+    additional_phone: Annotated[Optional[str], Field(description="Secondary phone.")] = None,
+    address: Annotated[Optional[str], Field(description="Postal / street address.")] = None,
+    fields_extra: Annotated[
+        Optional[Dict[str, Any]],
+        Field(description="Additional custom fields merged last (overrides on key conflict)."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
     """Create a CRM contact person inside a CRM project.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-
-    Convenience fields (position/phone/email/additional_phone/address) are merged
-    into the YouGile `fields` payload. Use `fields_extra` for any keys not exposed
-    as named arguments — they are merged last and override on key conflict.
+    USE WHEN: registering a new contact before creating a deal task.
     """
     return await create_crm_contact_tool(
-        workspace, project_id, title, position, phone, email, additional_phone, address, fields_extra, ctx
+        workspace, project_id, title, position, phone, email,
+        additional_phone, address, fields_extra, ctx,
     )
 
-@mcp.tool()
-async def find_crm_contact_by_external_id(workspace: str = "default", provider: str = None, chat_id: str = None, ctx: Context = None) -> dict:
-    """Find a CRM contact by external messenger ID.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+@mcp.tool(annotations=ANN_READ)
+async def find_crm_contact_by_external_id(
+    workspace: WorkspaceParam = "default",
+    provider: Annotated[
+        Optional[str],
+        Field(description="External provider slug (e.g. 'wazzup').", examples=["wazzup"]),
+    ] = None,
+    chat_id: Annotated[
+        Optional[str],
+        Field(description="Provider-side chat / contact identifier."),
+    ] = None,
+    ctx: Context = None,
+) -> dict:
+    """Look up a CRM contact by an external messenger ID.
 
-    Example: provider='wazzup', chat_id='chat-123'. Returns None if no contact
-    exists for the given external ID (YouGile 404 → None).
+    USE WHEN: routing an incoming Wazzup/Telegram message to an existing
+    deal, before deciding whether to create_crm_contact.
+    RETURNS: contact dict, or None if no match (YouGile 404 → None).
     """
     return await find_crm_contact_by_external_id_tool(workspace, provider, chat_id, ctx)
 
-# User extras
-@mcp.tool()
-async def get_me(workspace: str = "default", ctx: Context = None) -> dict:
-    """Get the user account associated with the workspace's API key.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
-    return await get_me_tool(workspace, ctx)
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
 
-# Sticker state for sprint
-@mcp.tool()
-async def get_sprint_sticker_state(workspace: str = "default", sticker_id: str = None, state_id: str = None, ctx: Context = None) -> dict:
-    """Get information about a specific state of a sprint sticker.
 
-    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
-    """
-    return await get_sprint_sticker_state_tool(workspace, sticker_id, state_id, ctx)
-
-# Register MCP Resources
 @mcp.resource("yougile://api/overview")
 def api_overview() -> str:
-    """YouGile API v2.0 comprehensive overview and getting started guide."""
+    """High-level YouGile API v2 overview and entity hierarchy."""
     return get_api_overview()
+
 
 @mcp.resource("yougile://api/endpoints")
 def api_endpoints() -> str:
-    """Complete list of all 65 YouGile API endpoints organized by category."""
+    """Complete list of YouGile API v2 endpoints, annotated with MCP coverage."""
     return get_api_endpoints()
 
-@mcp.resource("yougile://projects/{project_id}")
-def project_info(project_id: str) -> str:
-    """Detailed information about a specific project including schema and examples."""
-    return get_project_info(project_id)
 
-@mcp.resource("yougile://tasks/{task_id}")
-def task_info(task_id: str) -> str:
-    """Detailed information about a specific task including schema and operations."""
-    return get_task_info(task_id)
+@mcp.resource("yougile://guides/html")
+def html_guide() -> str:
+    """HTML formatting reference for task descriptions and chat messages."""
+    return get_html_guide()
 
 
-# Register MCP Prompts
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+
+
 @mcp.prompt(title="Setup New Project")
-def setup_project(project_name: str, project_type: str = "kanban"):
-    """Step-by-step guide for creating and configuring a new project in YouGile."""
+def setup_project(project_name: str, project_type: str = "kanban") -> str:
+    """Guide for creating and configuring a new project in YouGile."""
     return setup_new_project_prompt(project_name, project_type)
+
 
 @mcp.prompt(title="Create Task")
 def create_task_prompt(task_title: str, priority: str = "medium") -> str:
-    """Template for creating well-structured tasks with all necessary details."""
+    """Template for creating a well-structured task."""
     return create_task_workflow_prompt(task_title, priority)
 
+
 @mcp.prompt(title="Sprint Planning")
-def plan_sprint(sprint_name: str, duration_weeks: int = 2):
-    """Complete sprint planning workflow with backlog refinement and capacity planning."""
+def plan_sprint(sprint_name: str, duration_weeks: int = 2) -> str:
+    """Sprint planning workflow with stop-gate before commitment."""
     return sprint_planning_prompt(sprint_name, duration_weeks)
 
+
 @mcp.prompt(title="Daily Standup Report")
-def daily_standup(team_user_ids: str = "team-user-ids-here"):
-    """Generate daily standup report for team meetings."""
-    user_list = team_user_ids.split(",") if team_user_ids != "team-user-ids-here" else None
-    return daily_standup_prompt(user_list)
+def daily_standup() -> str:
+    """Generate a daily standup report (self or team)."""
+    return daily_standup_prompt()
+
 
 @mcp.prompt(title="Project Health Check")
-def project_health_check(project_id: str):
-    """Comprehensive project health analysis with task flow, team performance, and timeline metrics."""
+def project_health_check(project_id: str) -> str:
+    """Read-only audit of a project's task flow and bottlenecks."""
     return project_health_check_prompt(project_id)
 
+
 @mcp.prompt(title="User Productivity Report")
-def user_productivity_report(user_id: str, target_date: str = None):
-    """Individual user productivity analysis with task completion, creation, and collaboration metrics."""
+def user_productivity_report(user_id: str, target_date: str = None) -> str:
+    """Per-user productivity report for a given date."""
     return user_productivity_report_prompt(user_id, target_date)
 
+
 @mcp.prompt(title="Weekly Team Report")
-def weekly_team_report(team_user_ids: str, start_date: str):
-    """Weekly team performance report with productivity trends and collaboration metrics."""
-    user_list = team_user_ids.split(",")
-    return weekly_team_report_prompt(user_list, start_date)
+def weekly_team_report(team_user_ids: str, start_date: str) -> str:
+    """Weekly read-only team performance report."""
+    return weekly_team_report_prompt(team_user_ids, start_date)
+
 
 @mcp.prompt(title="Task Escalation")
-def task_escalation(task_id: str):
-    """Task escalation workflow when something is blocked or needs urgent attention."""
+def task_escalation(task_id: str) -> str:
+    """Escalate a blocked task with stop-gate before mutation."""
     return task_escalation_prompt(task_id)
 
+
 @mcp.prompt(title="Onboard Team Member")
-def onboard_team_member(new_member_name: str, role: str):
-    """Team member onboarding workflow with project access and task assignment."""
+def onboard_team_member(new_member_name: str, role: str) -> str:
+    """Onboarding workflow for a new team member."""
     return onboarding_new_team_member_prompt(new_member_name, role)
 
+
 @mcp.prompt(title="Deadline Crunch Management")
-def deadline_crunch_management(deadline_date: str):
-    """Managing tasks when approaching critical deadlines with priority triage and resource allocation."""
+def deadline_crunch_management(deadline_date: str) -> str:
+    """Triage work as a critical deadline approaches."""
     return deadline_crunch_management_prompt(deadline_date)
 
+
 @mcp.prompt(title="Sprint Retrospective")
-def sprint_retrospective(sprint_end_date: str, team_user_ids: str):
-    """Sprint/project retrospective analysis with performance patterns and improvement insights."""
-    user_list = team_user_ids.split(",")
-    return retrospective_analysis_prompt(sprint_end_date, user_list)
+def sprint_retrospective(sprint_end_date: str, team_user_ids: str) -> str:
+    """Sprint retrospective analysis (read-only)."""
+    return retrospective_analysis_prompt(sprint_end_date, team_user_ids)
 
-@mcp.prompt(title="HTML Formatting Guide")
-def html_formatting_guide():
-    """Essential guide for HTML formatting in YouGile tasks and comments - CRITICAL for proper display."""
-    return html_formatting_guide_prompt()
 
-@mcp.prompt(title="API Usage Guide") 
-def api_usage_guide():
-    """Quick reference for using YouGile MCP tools with correct parameters and formats."""
-    return api_usage_guide_prompt()
+# ---------------------------------------------------------------------------
+# Legacy single-tenant init (kept for backwards compatibility)
+# ---------------------------------------------------------------------------
 
 
 async def initialize_auth():
-    """Initialize authentication automatically from environment variables."""
+    """Initialize authentication from environment variables (single-tenant fallback)."""
     if not all([settings.yougile_email, settings.yougile_password, settings.yougile_company_id]):
         return False
-    
+
     try:
-        # First try API key from environment (MCP config)
         api_key_to_test = settings.yougile_api_key
-        
-        # If no API key in environment, try loading from credentials file
         if not api_key_to_test:
             api_key_to_test = load_api_key_from_credentials()
-        
-        # Test existing API key if we have one
+
         if api_key_to_test:
             try:
-                # Test existing key
                 auth.auth_manager.set_credentials(api_key_to_test, settings.yougile_company_id)
                 async with YouGileClient(auth.auth_manager) as client:
-                    # Test key with a simple API call (get users)
                     await client.get("/users")
-                
                 return True
-                
             except Exception:
                 pass
-        
-        # Create new API key
+
         temp_auth = auth.auth_manager.__class__()
         async with YouGileClient(temp_auth) as client:
             api_key = await auth_api.create_api_key(
-                client, 
-                settings.yougile_email, 
-                settings.yougile_password, 
-                settings.yougile_company_id
+                client,
+                settings.yougile_email,
+                settings.yougile_password,
+                settings.yougile_company_id,
             )
-            
-            # Save to global auth manager
             auth.auth_manager.set_credentials(api_key, settings.yougile_company_id)
-            
-            # Save API key to credentials file for future use
             await save_api_key_to_credentials(api_key)
-            
+
         return True
-        
+
     except Exception:
         return False
+
 
 async def save_api_key_to_credentials(api_key: str):
     """Save API key to credentials file for future reuse."""
     import json
     import os
     import tempfile
+    import time
     from pathlib import Path
-    
-    # Save to temp directory to avoid read-only filesystem issues
+
     temp_dir = Path(tempfile.gettempdir())
     credentials_file = temp_dir / "yougile_credentials.json"
-    
+
     try:
-        # Load existing credentials or create new
         credentials = {}
         if credentials_file.exists():
-            with open(credentials_file, 'r') as f:
+            with open(credentials_file, "r") as f:
                 credentials = json.load(f)
-        
-        # Update API key for current company  
-        import time
+
         credentials[settings.yougile_company_id] = {
             "api_key": api_key,
-            "created_at": str(int(time.time()))
+            "created_at": str(int(time.time())),
         }
-        
-        # Save to credentials file
-        with open(credentials_file, 'w') as f:
+
+        with open(credentials_file, "w") as f:
             json.dump(credentials, f, indent=2)
-        
-        # Set file permissions to be readable only by owner (Unix-like systems)
+
         try:
             os.chmod(credentials_file, 0o600)
         except (OSError, AttributeError):
-            pass  # Windows or other systems that don't support chmod
-        
+            pass
+
     except Exception:
         pass
 
@@ -1067,31 +1703,24 @@ def load_api_key_from_credentials() -> str:
     import json
     import tempfile
     from pathlib import Path
-    
-    # Load from temp directory
+
     temp_dir = Path(tempfile.gettempdir())
     credentials_file = temp_dir / "yougile_credentials.json"
-    
+
     if not credentials_file.exists():
         return None
-    
+
     try:
-        with open(credentials_file, 'r') as f:
+        with open(credentials_file, "r") as f:
             credentials = json.load(f)
-        
         company_data = credentials.get(settings.yougile_company_id, {})
-        api_key = company_data.get("api_key")
-        return api_key
-        
+        return company_data.get("api_key")
     except Exception:
         return None
 
-def run_legacy_init() -> None:
-    """Run single-tenant auto-auth if YOUGILE_EMAIL/PASSWORD/COMPANY_ID are set.
 
-    Multi-tenant workspaces from YOUGILE_KEY_<SLUG> env vars are loaded eagerly
-    at import time by core.registry; nothing to do for them here.
-    """
+def run_legacy_init() -> None:
+    """Run single-tenant auto-auth if YOUGILE_EMAIL/PASSWORD/COMPANY_ID are set."""
     if settings.yougile_email and settings.yougile_password and settings.yougile_company_id:
         asyncio.run(initialize_auth())
 
@@ -1099,8 +1728,7 @@ def run_legacy_init() -> None:
 def main() -> None:
     """Backwards-compatible entry point — stdio transport.
 
-    Prefer running via `python run_server.py [--http]`, which handles the
-    transport selection consistently.
+    Prefer running via `python run_server.py [--http]`.
     """
     run_legacy_init()
     mcp.run()

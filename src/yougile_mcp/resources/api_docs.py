@@ -1,284 +1,227 @@
 """
-MCP resources for YouGile API documentation and schemas.
-Provides access to API documentation, schemas, and examples.
-"""
+MCP resources for YouGile API documentation and HTML formatting guide.
 
-from typing import Dict, Any
-import json
-from pathlib import Path
+Resources are static reference documents fetched by URI on demand. They are
+NOT auto-loaded into the LLM context — the agent must explicitly request them
+when relevant (e.g. yougile://guides/html before writing a long task description).
+"""
 
 
 def get_api_overview() -> str:
-    """
-    Get YouGile API overview documentation.
-    
-    Returns comprehensive overview of YouGile REST API v2.0.
-    """
-    return """
-# YouGile REST API v2.0 Overview
+    """YouGile REST API v2 — high-level overview and entity hierarchy."""
+    return """# YouGile REST API v2 — Overview
 
-YouGile provides a comprehensive REST API for project management and team collaboration.
+YouGile is a Russian kanban + chat-first project management tool.
+This MCP server is a multi-tenant wrapper: one API key = one company
+(workspace). Use `list_workspaces` to see configured workspaces and pass
+the slug as `workspace=...` to every tool.
 
 ## Authentication
-- Use Bearer token authentication with API keys
-- Rate limit: 50 requests per minute per company
+- Bearer token per workspace (configured via YOUGILE_KEY_<SLUG> env vars).
+- Rate limit: 50 req/min per company. Exceeded calls return 429.
 - Base URL: https://yougile.com/api-v2/
 
-## Core Entities
-- **Companies**: Organizations and settings
-- **Users**: Team members and roles  
-- **Projects**: Project containers
-- **Boards**: Kanban boards within projects
-- **Tasks**: Work items with assignments and deadlines
-- **Stickers**: Custom fields for tasks and sprints
-- **Chats**: Team communication
-- **Webhooks**: Event notifications
+## Entity hierarchy
+- Company (= workspace; one API key per company)
+  - Users (members; isAdmin: bool)
+  - Departments (org structure; does NOT control project access)
+  - Stickers (company-wide custom fields: string, sprint, text, number)
+  - Projects
+    - Project Roles (built-in: manager/employee/observer; plus custom)
+    - Boards
+      - Columns
+        - Tasks
+          - Subtasks (= regular tasks referenced via parent.subtasks: [uuid])
+          - Stickers (values: {sticker_id: state_id})
+          - Checklists
+          - Chat messages (= comments; chat_id == task_id)
+          - Deal (CRM only)
+  - Group chats (independent of tasks)
+  - Webhooks
 
-## API Categories (17 total, 65 endpoints)
-1. Authorization (4 endpoints) - Authentication and API keys
-2. Company (2 endpoints) - Company management
-3. Users (5 endpoints) - User management
-4. Projects (4 endpoints) - Project operations
-5. Boards (4 endpoints) - Board management
-6. Tasks (7 endpoints) - Task lifecycle
-7. And 11 more specialized categories...
+## Multi-tenant routing
+Every tool accepts `workspace: str = "default"`. The slug maps to an API
+key configured in the server environment. Calling a tool without an
+explicit `workspace` targets the legacy YOUGILE_API_KEY (= "default" slug).
 
-## Getting Started
-1. Get company ID with your login/password
-2. Create API key for the company
-3. Use API key in Authorization header for all requests
-4. Start managing your projects programmatically!
-"""
-
-
-def get_project_info(project_id: str) -> str:
-    """
-    Get project information resource.
-    
-    Args:
-        project_id: Project identifier
-        
-    Returns:
-        Project documentation and schema information
-    """
-    return f"""
-# Project Information: {project_id}
-
-## Project Schema
-```json
-{{
-  "id": "string (UUID)",
-  "title": "string",
-  "description": "string (optional)",
-  "users": {{
-    "user_id": "role (admin|developer|viewer)"
-  }},
-  "timestamp": "datetime",
-  "deleted": "boolean"
-}}
-```
-
-## Available Operations
-- GET /api-v2/projects - List all projects
-- POST /api-v2/projects - Create new project
-- GET /api-v2/projects/{project_id} - Get specific project
-- PUT /api-v2/projects/{project_id} - Update project
-
-## Example Usage
-```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \\
-     -H "Content-Type: application/json" \\
-     https://yougile.com/api-v2/projects/{project_id}
-```
-
-## Related Resources
-- yougile://boards?project_id={project_id} - Project boards
-- yougile://users?project_id={project_id} - Project members
-- yougile://roles/{project_id} - Project roles
-"""
-
-
-def get_task_info(task_id: str) -> str:
-    """
-    Get task information resource.
-    
-    Args:
-        task_id: Task identifier
-        
-    Returns:
-        Task documentation and schema information
-    """
-    return f"""
-# Task Information: {task_id}
-
-## Task Schema
-```json
-{{
-  "id": "string (UUID)",
-  "title": "string",
-  "description": "string (optional)",
-  "column_id": "string (UUID)",
-  "assigned_users": [
-    {{
-      "id": "string",
-      "name": "string",
-      "email": "string"
-    }}
-  ],
-  "deadline": {{
-    "date": "string (YYYY-MM-DD)",
-    "is_expired": "boolean"
-  }},
-  "checklists": [
-    {{
-      "title": "string",
-      "items": [
-        {{
-          "title": "string",
-          "is_completed": "boolean"
-        }}
-      ]
-    }}
-  ],
-  "timestamp": "datetime",
-  "deleted": "boolean"
-}}
-```
-
-## Available Operations
-- GET /api-v2/tasks - List tasks (newest first)
-- GET /api-v2/task-list - List tasks (standard order)
-- POST /api-v2/tasks - Create new task
-- GET /api-v2/tasks/{task_id} - Get specific task
-- PUT /api-v2/tasks/{task_id} - Update task
-- GET /api-v2/tasks/{task_id}/chat-subscribers - Get task chat participants
-- PUT /api-v2/tasks/{task_id}/chat-subscribers - Update chat participants
-
-## Example Usage
-```bash
-# Get task details
-curl -H "Authorization: Bearer YOUR_API_KEY" \\
-     https://yougile.com/api-v2/tasks/{task_id}
-
-# Update task
-curl -X PUT \\
-     -H "Authorization: Bearer YOUR_API_KEY" \\
-     -H "Content-Type: application/json" \\
-     -d '{{"title": "Updated Task Title"}}' \\
-     https://yougile.com/api-v2/tasks/{task_id}
-```
+## Common pitfalls
+- Timestamps are MILLISECONDS (13 digits), not seconds.
+- Task description and chat messages must be HTML (`<br>`, not `\\n`).
+  See yougile://guides/html for the full formatter.
+- update_task replaces list fields entirely (assigned, subtasks, stickers,
+  checklists). Read current state first, modify, then write back.
+- soft-delete vs hard-delete: deleted=true hides from list_*; restore via
+  update_*(deleted=false). Lists hide deleted by default — pass
+  include_deleted=true when searching for a possibly-deleted item.
 """
 
 
 def get_api_endpoints() -> str:
-    """
-    Get complete list of API endpoints.
-    
-    Returns:
-        Comprehensive list of all 65 YouGile API endpoints organized by category
-    """
-    return """
-# YouGile API v2.0 Complete Endpoints Reference
+    """Complete list of YouGile API v2 endpoints (reference; not all are exposed via MCP)."""
+    return """# YouGile API v2 — Endpoints Reference
 
-## Authorization (4 endpoints)
-- POST /api-v2/auth/companies - Get list of companies
-- POST /api-v2/auth/keys/get - Get list of API keys  
-- POST /api-v2/auth/keys - Create API key
-- DELETE /api-v2/auth/keys/{key} - Delete API key
+Total: 65 endpoints across 17 categories. Items marked [MCP] are exposed
+as MCP tools by this server; the rest are reachable only via raw HTTP.
 
-## Company (2 endpoints)
-- GET /api-v2/companies - Get company details
-- PUT /api-v2/companies - Update company
+## Authorization (4)
+- POST /api-v2/auth/companies            [MCP: get_companies]
+- POST /api-v2/auth/keys/get             [MCP: list_api_keys]
+- POST /api-v2/auth/keys                 [MCP: create_api_key]
+- DELETE /api-v2/auth/keys/{key}         [MCP: delete_api_key]
 
-## Users (5 endpoints)
-- GET /api-v2/users - Get list of users
-- POST /api-v2/users - Invite user to company
-- GET /api-v2/users/{id} - Get user by ID
-- PUT /api-v2/users/{id} - Update user
-- DELETE /api-v2/users/{id} - Remove user from company
+## Company (2)
+- GET /api-v2/companies
+- PUT /api-v2/companies
 
-## Projects (4 endpoints)
-- GET /api-v2/projects - Get list of projects
-- POST /api-v2/projects - Create project
-- GET /api-v2/projects/{id} - Get project by ID
-- PUT /api-v2/projects/{id} - Update project
+## Users (5)
+- GET /api-v2/users                      [MCP: list_users]
+- POST /api-v2/users                     [MCP: invite_user]
+- GET /api-v2/users/{id}                 [MCP: get_user]
+- PUT /api-v2/users/{id}                 [MCP: update_user]
+- DELETE /api-v2/users/{id}              [MCP: remove_user]
 
-## Project Roles (5 endpoints)
-- GET /api-v2/projects/{projectId}/roles - Get project roles
-- POST /api-v2/projects/{projectId}/roles - Create project role
-- GET /api-v2/projects/{projectId}/roles/{id} - Get role by ID
-- PUT /api-v2/projects/{projectId}/roles/{id} - Update role
-- DELETE /api-v2/projects/{projectId}/roles/{id} - Delete role
+Also: GET /api-v2/users/me               [MCP: get_me]
 
-## Departments (4 endpoints)
-- GET /api-v2/departments - Get list of departments
-- POST /api-v2/departments - Create department
-- GET /api-v2/departments/{id} - Get department by ID
-- PUT /api-v2/departments/{id} - Update department
+## Projects (4)
+- GET /api-v2/projects                   [MCP: list_projects]
+- POST /api-v2/projects                  [MCP: create_project]
+- GET /api-v2/projects/{id}              [MCP: get_project]
+- PUT /api-v2/projects/{id}              [MCP: update_project]
 
-## Boards (4 endpoints)
-- GET /api-v2/boards - Get list of boards
-- POST /api-v2/boards - Create board
-- GET /api-v2/boards/{id} - Get board by ID
-- PUT /api-v2/boards/{id} - Update board
+## Project Roles (5)
+- GET /api-v2/projects/{projectId}/roles
+- POST /api-v2/projects/{projectId}/roles
+- GET /api-v2/projects/{projectId}/roles/{id}
+- PUT /api-v2/projects/{projectId}/roles/{id}
+- DELETE /api-v2/projects/{projectId}/roles/{id}
 
-## Columns (4 endpoints)
-- GET /api-v2/columns - Get list of columns
-- POST /api-v2/columns - Create column
-- GET /api-v2/columns/{id} - Get column by ID
-- PUT /api-v2/columns/{id} - Update column
+## Departments (4)
+- GET /api-v2/departments
+- POST /api-v2/departments
+- GET /api-v2/departments/{id}
+- PUT /api-v2/departments/{id}
 
-## Tasks (7 endpoints)
-- GET /api-v2/task-list - Get task list (standard order)
-- GET /api-v2/tasks - Get tasks (newest first)
-- POST /api-v2/tasks - Create task
-- GET /api-v2/tasks/{id} - Get task by ID
-- PUT /api-v2/tasks/{id} - Update task
-- GET /api-v2/tasks/{id}/chat-subscribers - Get task chat participants
-- PUT /api-v2/tasks/{id}/chat-subscribers - Update chat participants
+## Boards (4)
+- GET /api-v2/boards                     [MCP: list_boards]
+- POST /api-v2/boards                    [MCP: create_board]
+- GET /api-v2/boards/{id}                [MCP: get_board]
+- PUT /api-v2/boards/{id}                [MCP: update_board]
 
-## String Stickers (4 endpoints)
-- GET /api-v2/string-stickers - Get string stickers
-- POST /api-v2/string-stickers - Create string sticker
-- GET /api-v2/string-stickers/{id} - Get sticker by ID
-- PUT /api-v2/string-stickers/{id} - Update sticker
+## Columns (4)
+- GET /api-v2/columns                    [MCP: list_columns]
+- POST /api-v2/columns                   [MCP: create_column]
+- GET /api-v2/columns/{id}               [MCP: get_column]
+- PUT /api-v2/columns/{id}               [MCP: update_column]
 
-## String Sticker States (3 endpoints)
-- GET /api-v2/string-stickers/{stickerId}/states/{stateId} - Get state
-- PUT /api-v2/string-stickers/{stickerId}/states/{stateId} - Update state
-- POST /api-v2/string-stickers/{stickerId}/states - Create state
+## Tasks (7)
+- GET /api-v2/task-list                  [MCP: list_task_summaries]
+- GET /api-v2/tasks                      [MCP: list_tasks]
+- POST /api-v2/tasks                     [MCP: create_task]
+- GET /api-v2/tasks/{id}                 [MCP: get_task]
+- PUT /api-v2/tasks/{id}                 [MCP: update_task, delete_task,
+                                                set_task_deadline, remove_task_sticker]
+- GET /api-v2/tasks/{id}/chat-subscribers   [MCP: get_task_chat_subscribers]
+- PUT /api-v2/tasks/{id}/chat-subscribers   [MCP: update_task_chat_subscribers]
 
-## Sprint Stickers (4 endpoints)
-- GET /api-v2/sprint-stickers - Get sprint stickers
-- POST /api-v2/sprint-stickers - Create sprint sticker
-- GET /api-v2/sprint-stickers/{id} - Get sticker by ID
-- PUT /api-v2/sprint-stickers/{id} - Update sticker
+Also: helper get_tasks_by_date           [MCP] — date-filtered wrapper over /tasks.
 
-## Sprint Sticker States (3 endpoints)
-- GET /api-v2/sprint-stickers/{stickerId}/states/{stateId} - Get state
-- PUT /api-v2/sprint-stickers/{stickerId}/states/{stateId} - Update state
-- POST /api-v2/sprint-stickers/{stickerId}/states - Create state
+## String Stickers (4)
+- GET /api-v2/string-stickers            [MCP: list_string_stickers]
+- POST /api-v2/string-stickers
+- GET /api-v2/string-stickers/{id}       [MCP: get_string_sticker]
+- PUT /api-v2/string-stickers/{id}
 
-## Group Chats (4 endpoints)
-- GET /api-v2/group-chats - Get list of chats
-- POST /api-v2/group-chats - Create chat
-- GET /api-v2/group-chats/{id} - Get chat by ID
-- PUT /api-v2/group-chats/{id} - Update chat
+## String Sticker States (3)
+- GET /api-v2/string-stickers/{stickerId}/states/{stateId}    [MCP: get_string_sticker_state]
+- PUT /api-v2/string-stickers/{stickerId}/states/{stateId}
+- POST /api-v2/string-stickers/{stickerId}/states
 
-## Chat Messages (4 endpoints)
-- GET /api-v2/chats/{chatId}/messages - Get message history
-- POST /api-v2/chats/{chatId}/messages - Send message
-- GET /api-v2/chats/{chatId}/messages/{id} - Get message by ID
-- PUT /api-v2/chats/{chatId}/messages/{id} - Update message
+## Sprint Stickers (4)
+- GET /api-v2/sprint-stickers
+- POST /api-v2/sprint-stickers
+- GET /api-v2/sprint-stickers/{id}
+- PUT /api-v2/sprint-stickers/{id}
 
-## Files (1 endpoint)
-- POST /api-v2/upload-file - Upload file
+## Sprint Sticker States (3)
+- GET /api-v2/sprint-stickers/{stickerId}/states/{stateId}    [MCP: get_sprint_sticker_state]
+- PUT /api-v2/sprint-stickers/{stickerId}/states/{stateId}
+- POST /api-v2/sprint-stickers/{stickerId}/states
 
-## Webhooks (3 endpoints)
-- POST /api-v2/webhooks - Create webhook subscription
-- GET /api-v2/webhooks - Get webhook subscriptions
-- PUT /api-v2/webhooks/{id} - Update webhook subscription
+## Group Chats (4)
+- GET /api-v2/group-chats                [MCP: list_group_chats]
+- POST /api-v2/group-chats               [MCP: create_group_chat]
+- GET /api-v2/group-chats/{id}           [MCP: get_group_chat]
+- PUT /api-v2/group-chats/{id}
 
----
-**Total: 65 endpoints across 17 categories**
+## Chat Messages (4)
+- GET /api-v2/chats/{chatId}/messages    [MCP: get_chat_messages, get_task_comments]
+- POST /api-v2/chats/{chatId}/messages   [MCP: send_chat_message, add_task_comment]
+- GET /api-v2/chats/{chatId}/messages/{id}    [MCP: get_chat_message]
+- PUT /api-v2/chats/{chatId}/messages/{id}    [MCP: update_chat_message]
+
+## Files (1)
+- POST /api-v2/upload-file               [MCP: upload_file]
+
+## Webhooks (3)
+- GET /api-v2/webhooks                   [MCP: list_webhooks]
+- POST /api-v2/webhooks                  [MCP: create_webhook]
+- PUT /api-v2/webhooks/{id}              [MCP: update_webhook]
+
+## MCP-only helpers (not 1:1 with REST)
+- list_workspaces — enumerate tenants this server is configured for.
+- get_user_context — return user-configured default project/board hints.
+- decode_task_stickers — resolve {sticker_id: state_id} to human-readable labels.
+- create_crm_contact, find_crm_contact_by_external_id — CRM contact helpers.
+"""
+
+
+def get_html_guide() -> str:
+    """HTML formatting reference for task descriptions and chat messages."""
+    return """# YouGile HTML formatting guide
+
+YouGile stores task description and chat message bodies as HTML. Plain
+text with `\\n` renders as a single line. Always wrap content in HTML.
+
+## Minimum vocabulary
+- `<br>` — line break (instead of `\\n`)
+- `<p>...</p>` — paragraph (added automatically by send_chat_message if
+  you pass plain `text` without `text_html`)
+- `<b>...</b>` `<i>...</i>` `<u>...</u>` — bold / italic / underline
+- `<a href="https://...">label</a>` — link
+- `<ul><li>...</li></ul>` — bullet list
+- `<ol><li>...</li></ol>` — numbered list
+
+## Examples
+
+Bug report:
+```
+<b>Bug:</b> login fails<br><br>
+<b>Steps:</b><br>
+1. Open /login<br>
+2. Submit form<br>
+3. See 500<br><br>
+<b>Expected:</b> 200 + redirect to /dashboard
+```
+
+Feature spec with link:
+```
+<b>Feature:</b> dark mode<br>
+<a href="https://figma.com/x">Design mockup</a><br>
+Acceptance: toggle persists across sessions.
+```
+
+Multi-section comment:
+```
+<b>Progress:</b><br>
+<ul>
+  <li>API done</li>
+  <li>UI in review</li>
+</ul>
+Blocked on QA env.
+```
+
+## Anti-patterns
+- `\\n` for line breaks — invisible in UI.
+- Markdown (`**bold**`, `# h1`) — not parsed.
+- Raw user input without escaping — XSS risk; sanitize untrusted text.
 """

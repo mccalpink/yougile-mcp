@@ -3,7 +3,6 @@
 # Import all tool modules
 from . import (
     auth_tools,
-    company_tools,
     user_tools,
     project_tools,
     board_tools,
@@ -16,7 +15,6 @@ from . import (
 
 __all__ = [
     "auth_tools",
-    "company_tools", 
     "user_tools",
     "project_tools",
     "board_tools",

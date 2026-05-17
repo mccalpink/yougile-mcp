@@ -18,6 +18,7 @@ from ...utils.verbosity import apply_verbosity, Verbosity
 # Group Chat Management
 async def list_group_chats_tool(
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -34,7 +35,7 @@ async def list_group_chats_tool(
             result = await chats.get_group_chats(client)
 
         await ctx.info(f"Successfully retrieved {len(result)} group chats")
-        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity, include=include, is_list=True)
         
     except YouGileError as e:
         await ctx.error(f"API error while fetching group chats: {e.message}")
@@ -129,6 +130,7 @@ async def create_group_chat_tool(
 async def get_group_chat_tool(
     chat_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -148,7 +150,7 @@ async def get_group_chat_tool(
             result = await chats.get_group_chat(client, chat_id)
 
         await ctx.info(f"Successfully retrieved group chat: {result.get('title', chat_id)}")
-        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity, include=include)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -166,6 +168,7 @@ async def get_chat_messages_tool(
     chat_id: str,
     limit: int = 50,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -190,7 +193,7 @@ async def get_chat_messages_tool(
             result = result[-limit:]  # Get latest messages
 
         await ctx.info(f"Successfully retrieved {len(result)} messages")
-        return apply_verbosity(result, dto_type="message", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="message", verbosity=verbosity, include=include, is_list=True)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -268,6 +271,7 @@ async def get_chat_message_tool(
     chat_id: str,
     message_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -289,7 +293,7 @@ async def get_chat_message_tool(
             result = await chats.get_chat_message(client, chat_id, message_id)
 
         await ctx.info(f"Successfully retrieved message")
-        return apply_verbosity(result, dto_type="message", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="message", verbosity=verbosity, include=include)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -380,6 +384,7 @@ async def get_task_comments_tool(
     task_id: str,
     limit: int = 50,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -387,7 +392,7 @@ async def get_task_comments_tool(
     if ctx:
         await ctx.info(f"Fetching comments for task: {task_id}")
     return await get_chat_messages_tool(
-        task_id, limit, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        task_id, limit, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 

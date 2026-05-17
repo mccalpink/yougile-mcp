@@ -11,6 +11,7 @@ from ...core.exceptions import YouGileError, ValidationError
 from ...api import stickers
 from ...utils.validation import validate_uuid
 from ...utils.verbosity import apply_verbosity, Verbosity
+from ...utils.normalizers import normalize_sprint_sticker_state
 
 
 async def list_string_stickers_tool(
@@ -161,6 +162,17 @@ async def get_sprint_sticker_state_tool(
             await ctx.info(
                 f"Successfully retrieved sprint sticker state: {result.get('name', state_id)}"
             )
+
+        # Quirk: SprintStickerState.begin/end хранятся в seconds, не ms.
+        # Нормализуем в ms для единообразия с остальным API.
+        if "begin" in result or "end" in result:
+            result = normalize_sprint_sticker_state(result, direction="response")
+        elif "states" in result:
+            result["states"] = [
+                normalize_sprint_sticker_state(s, direction="response")
+                for s in result.get("states", [])
+            ]
+
         return result
 
     except ValidationError as e:

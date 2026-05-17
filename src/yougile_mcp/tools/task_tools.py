@@ -12,28 +12,39 @@ from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import tasks
-from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.validation import validate_uuid, validate_non_empty_string, normalize_deadline
 
 
 async def list_task_summaries_tool(
     limit: int = 50,
     offset: int = 0,
+    sticker_id: Optional[str] = None,
+    sticker_state_id: Optional[str] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get list of task summaries with pagination.
-    
+
     Args:
         limit: Maximum number of tasks to return (default: 50)
         offset: Number of tasks to skip (default: 0)
+        sticker_id: Server-side filter — only return tasks carrying this sticker.
+        sticker_state_id: Server-side filter — only return tasks whose sticker
+            value matches this state ID (typically combined with sticker_id).
     """
     try:
         if ctx:
             await ctx.info(f"Fetching task list from YouGile (limit: {limit}, offset: {offset})...")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
-            result = await tasks.get_task_list(client, limit=limit, offset=offset)
-            
+            result = await tasks.get_task_list(
+                client,
+                limit=limit,
+                offset=offset,
+                sticker_id=sticker_id,
+                sticker_state_id=sticker_state_id,
+            )
+
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} task summaries")
         return result
@@ -55,11 +66,13 @@ async def list_tasks_tool(
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
+    sticker_id: Optional[str] = None,
+    sticker_state_id: Optional[str] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get detailed list of tasks with optional filtering.
-    
+
     Args:
         column_id: Filter tasks by column ID
         assigned_to: Filter tasks by assigned user ID
@@ -67,25 +80,28 @@ async def list_tasks_tool(
         limit: Maximum number of tasks to return (default: 50)
         offset: Number of tasks to skip (default: 0)
         include_deleted: Include deleted tasks (default: False)
+        sticker_id: Server-side filter — only return tasks carrying this sticker.
+        sticker_state_id: Server-side filter — only return tasks whose sticker
+            value matches this state ID (typically combined with sticker_id).
     """
     try:
         if ctx:
             await ctx.info(f"Fetching detailed tasks from YouGile (limit: {limit}, offset: {offset})...")
-        
+
         if column_id:
             column_id = validate_uuid(column_id, "column_id")
             if ctx:
                 await ctx.info(f"Filtering by column: {column_id}")
-        
+
         if assigned_to:
             assigned_to = validate_uuid(assigned_to, "assigned_to")
             if ctx:
                 await ctx.info(f"Filtering by assignee: {assigned_to}")
-        
+
         if title:
             if ctx:
                 await ctx.info(f"Filtering by title: {title}")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_tasks(
                 client,
@@ -94,9 +110,11 @@ async def list_tasks_tool(
                 title=title,
                 limit=limit,
                 offset=offset,
-                include_deleted=include_deleted
+                include_deleted=include_deleted,
+                sticker_id=sticker_id,
+                sticker_state_id=sticker_state_id,
             )
-            
+
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} detailed tasks")
         return result
@@ -186,7 +204,9 @@ async def create_task_tool(
             task_data["assigned"] = assigned_users
 
         if deadline is not None:
-            task_data["deadline"] = deadline
+            # Auto-fill required blockedPoints/links arrays so callers don't
+            # have to remember the DTO contract. See normalize_deadline().
+            task_data["deadline"] = normalize_deadline(deadline, for_update=False)
 
         if time_tracking is not None:
             task_data["timeTracking"] = time_tracking

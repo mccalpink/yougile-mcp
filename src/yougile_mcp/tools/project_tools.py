@@ -35,21 +35,25 @@ async def list_projects_tool(workspace: str = "default", ctx: Context = None) ->
 async def create_project_tool(
     title: str,
     users: Dict[str, str] = None,
-    workflow_id: str = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> models.CreatedEntity:
-    """Create a new project."""
+    """Create a new project.
+
+    NOTE: The YouGile CreateProjectDto only accepts `title` and `users` — there
+    is no workflow association at create time. Workflow concepts live on
+    boards, not projects.
+    """
     try:
         await ctx.info(f"Creating project: {title}")
-        
+
         # Validate inputs
         title = validate_non_empty_string(title, "title")
-        
+
         project_data = {
             "title": title
         }
-        
+
         if users is not None:
             # Validate user IDs and roles in the users dict
             validated_users = {}
@@ -58,11 +62,7 @@ async def create_project_tool(
                 role = validate_non_empty_string(role, "user_role")
                 validated_users[user_id] = role
             project_data["users"] = validated_users
-            
-        if workflow_id is not None:
-            workflow_id = validate_uuid(workflow_id, "workflow_id")
-            project_data["workflowId"] = workflow_id
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.create_project(client, project_data)
             
@@ -112,23 +112,27 @@ async def update_project_tool(
     project_id: str,
     title: str = None,
     users: Dict[str, str] = None,
-    workflow_id: str = None,
+    deleted: bool = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> models.Project:
-    """Update project information."""
+    """Update project information.
+
+    NOTE: The YouGile UpdateProjectDto only accepts `title`, `users`, and
+    `deleted`. There is no workflow field — boards carry workflows.
+    """
     try:
         await ctx.info(f"Updating project: {project_id}")
-        
+
         project_id = validate_uuid(project_id, "project_id")
-        
+
         # Build update data with only provided fields
         project_data = {}
-        
+
         if title is not None:
             title = validate_non_empty_string(title, "title")
             project_data["title"] = title
-            
+
         if users is not None:
             # Validate user IDs and roles in the users dict
             validated_users = {}
@@ -137,11 +141,10 @@ async def update_project_tool(
                 role = validate_non_empty_string(role, "user_role")
                 validated_users[user_id] = role
             project_data["users"] = validated_users
-            
-        if workflow_id is not None:
-            workflow_id = validate_uuid(workflow_id, "workflow_id")
-            project_data["workflowId"] = workflow_id
-            
+
+        if deleted is not None:
+            project_data["deleted"] = deleted
+
         if not project_data:
             raise ValidationError("At least one field must be provided for update")
         

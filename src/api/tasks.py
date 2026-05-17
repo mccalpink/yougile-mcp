@@ -8,13 +8,19 @@ from ..utils.validation import validate_uuid
 async def get_task_list(
     client: YouGileClient,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    sticker_id: Optional[str] = None,
+    sticker_state_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Get list of task summaries."""
     params = {
         "limit": limit,
-        "offset": offset
+        "offset": offset,
     }
+    if sticker_id:
+        params["stickerId"] = sticker_id
+    if sticker_state_id:
+        params["stickerStateId"] = sticker_state_id
     response = await client.get("/task-list", params=params)
     return response.get("content", [])
 
@@ -25,7 +31,9 @@ async def get_tasks(
     title: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    include_deleted: bool = False
+    include_deleted: bool = False,
+    sticker_id: Optional[str] = None,
+    sticker_state_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Get detailed list of tasks with optional filtering."""
     params = {
@@ -33,16 +41,22 @@ async def get_tasks(
         "offset": offset,
         "includeDeleted": include_deleted
     }
-    
+
     if column_id:
         params["columnId"] = validate_uuid(column_id, "column_id")
-    
+
     if assigned_to:
         params["assignedTo"] = assigned_to
-    
+
     if title:
         params["title"] = title
-    
+
+    if sticker_id:
+        params["stickerId"] = sticker_id
+
+    if sticker_state_id:
+        params["stickerStateId"] = sticker_state_id
+
     response = await client.get("/tasks", params=params)
     return response.get("content", [])
 

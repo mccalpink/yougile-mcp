@@ -3,7 +3,7 @@ YouGile Users MCP tools.
 User management and invitations (5 endpoints).
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
 from ...core.registry import registry
@@ -13,19 +13,48 @@ from ...api import users
 from ...utils.validation import validate_uuid, validate_email
 
 
-async def list_users_tool(workspace: str = "default", ctx: Context = None) -> List[models.User]:
-    """Get list of all users in the company."""
+async def list_users_tool(
+    email: Optional[str] = None,
+    project_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    workspace: str = "default",
+    ctx: Context = None,
+) -> List[models.User]:
+    """Get list of users in the company with optional server-side filters.
+
+    Args:
+        email: Filter by exact email match (server-side).
+        project_id: Filter to users belonging to this project (server-side).
+        limit: Page size (default 50, max 1000).
+        offset: Page offset (default 0).
+
+    NOTE: YouGile /users does not expose includeDeleted; deleted users are
+    never returned via this endpoint.
+    """
     try:
         await ctx.info("Fetching users from YouGile...")
 
+        if project_id:
+            project_id = validate_uuid(project_id, "project_id")
+
         async with YouGileClient(registry.get(workspace)) as client:
-            result = await users.get_users(client)
-            
+            result = await users.get_users(
+                client,
+                limit=limit,
+                offset=offset,
+                email=email,
+                project_id=project_id,
+            )
+
         user_list = [models.User(**user) for user in result]
-        
+
         await ctx.info(f"Successfully retrieved {len(user_list)} users")
         return user_list
-        
+
+    except ValidationError as e:
+        await ctx.error(f"Validation failed: {e.message}")
+        raise
     except YouGileError as e:
         await ctx.error(f"API error while fetching users: {e.message}")
         raise

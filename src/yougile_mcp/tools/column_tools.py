@@ -117,27 +117,44 @@ async def update_column_tool(
     column_id: str,
     title: str = None,
     color: int = None,
+    board_id: Optional[str] = None,
+    deleted: Optional[bool] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Update column information."""
+    """Update column information.
+
+    Args:
+        column_id: ID of the column to update
+        title: New column title
+        color: New column color (1-16)
+        board_id: Move the column to a different board (UUID).
+        deleted: Soft-delete the column (True) or restore (False).
+    """
     try:
         await ctx.info(f"Updating column: {column_id}")
-        
+
         column_id = validate_uuid(column_id, "column_id")
-        
+
         # Build update data with only provided fields
         column_data = {}
-        
+
         if title is not None:
             title = validate_non_empty_string(title, "title")
             column_data["title"] = title
-            
+
         if color is not None:
             if not (1 <= color <= 16):
                 raise ValidationError("Color must be between 1 and 16")
             column_data["color"] = color
-            
+
+        if board_id is not None:
+            board_id = validate_uuid(board_id, "board_id")
+            column_data["boardId"] = board_id
+
+        if deleted is not None:
+            column_data["deleted"] = deleted
+
         if not column_data:
             raise ValidationError("At least one field must be provided for update")
         

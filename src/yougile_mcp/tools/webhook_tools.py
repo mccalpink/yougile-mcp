@@ -60,8 +60,10 @@ async def list_webhooks_tool(
 ) -> List[Dict[str, Any]]:
     """List configured webhook subscriptions for the workspace.
 
-    NOTE: YouGile API does not support server-side pagination for /webhooks;
-    we apply limit/offset client-side after fetching the full list.
+    **Note:** YouGile API does not support server-side pagination for
+    webhooks. The full list is fetched on every call; limit/offset are
+    applied client-side. Be mindful with companies that have many webhook
+    subscriptions.
     """
     try:
         if ctx:

@@ -11,7 +11,7 @@ from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import tasks
-from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.validation import validate_uuid, validate_non_empty_string, normalize_deadline
 
 
 async def update_task_tool(
@@ -92,7 +92,10 @@ async def update_task_tool(
             task_data["assigned"] = assigned_users
 
         if deadline is not None:
-            task_data["deadline"] = deadline
+            # Auto-fill required blockedPoints/links arrays so callers don't
+            # have to remember the DTO contract. Marker dicts ({deleted}, {empty})
+            # pass through unchanged. See normalize_deadline().
+            task_data["deadline"] = normalize_deadline(deadline, for_update=True)
 
         if time_tracking is not None:
             task_data["timeTracking"] = time_tracking

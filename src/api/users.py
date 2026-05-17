@@ -3,14 +3,38 @@ YouGile Users API client.
 User management and invitations (5 endpoints).
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from ..core.client import YouGileClient
 from ..utils.validation import validate_uuid, validate_email
 
 
-async def get_users(client: YouGileClient) -> List[Dict[str, Any]]:
-    """Get list of users."""
-    response = await client.get("/users")
+async def get_users(
+    client: YouGileClient,
+    limit: int = 50,
+    offset: int = 0,
+    email: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Get list of users with optional filtering.
+
+    Args:
+        limit: Page size (max 1000).
+        offset: Page offset.
+        email: Filter by exact email match (server-side).
+        project_id: Filter to users that belong to this project (server-side).
+
+    NOTE: YouGile API v2 does not expose `includeDeleted` for /users.
+    """
+    params: Dict[str, Any] = {
+        "limit": limit,
+        "offset": offset,
+    }
+    if email:
+        params["email"] = email
+    if project_id:
+        params["projectId"] = project_id
+
+    response = await client.get("/users", params=params)
     return response.get("content", [])
 
 

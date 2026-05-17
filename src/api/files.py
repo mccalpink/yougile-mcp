@@ -16,15 +16,6 @@ from ..core.exceptions import (
 from ..config import settings
 
 
-async def upload_file(client: YouGileClient, file_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Legacy JSON-style upload (kept for backwards compatibility).
-
-    The real YouGile endpoint expects multipart/form-data — see
-    `upload_file_multipart` for the correct implementation.
-    """
-    return await client.post("/upload-file", json=file_data)
-
-
 async def upload_file_multipart(
     client: YouGileClient,
     path: str,

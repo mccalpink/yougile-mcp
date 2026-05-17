@@ -315,18 +315,37 @@ async def get_user_context(ctx: Context = None) -> str:
 
 @mcp.tool(annotations=ANN_READ)
 async def list_users(
+    email: Annotated[
+        Optional[str],
+        Field(description="Exact email match (server-side filter)."),
+    ] = None,
+    project_id: Annotated[
+        Optional[str],
+        Field(description="Restrict to members of this project UUID (server-side filter)."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
+    offset: Annotated[int, Field(description="Page offset.")] = 0,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
-    """List all users in the workspace company.
+    """List users in the workspace company, optionally filtered.
 
     USE WHEN: mapping a name/email to a user_id before assignment, or for
     roster snapshots.
     RETURNS: lightweight user records: id, email, realName, isAdmin, status.
     Does NOT include department membership or custom fields — call get_user
     for the full profile.
+    NOTE: YouGile /users does not support `includeDeleted`; soft-deleted
+    users are never returned here.
     """
-    return await list_users_tool(workspace=workspace, ctx=ctx)
+    return await list_users_tool(
+        email=email,
+        project_id=project_id,
+        limit=limit,
+        offset=offset,
+        workspace=workspace,
+        ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
@@ -455,20 +474,19 @@ async def create_project(
             ),
         ),
     ] = None,
-    workflow_id: Annotated[
-        Optional[str],
-        Field(description="Optional workflow UUID to attach."),
-    ] = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a new project.
 
+    API CONTRACT: YouGile's CreateProjectDto only accepts `title` and
+    `users`. There is no workflow association at create time — workflow
+    concepts live on boards, not projects.
     RETURNS: {id} only — call get_project(project_id) for full details.
     RELATED: create_board to add boards after creation.
     """
     return await create_project_tool(
-        title=title, users=users, workflow_id=workflow_id, workspace=workspace, ctx=ctx,
+        title=title, users=users, workspace=workspace, ctx=ctx,
     )
 
 
@@ -495,17 +513,22 @@ async def update_project(
             ),
         ),
     ] = None,
-    workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
+    deleted: Annotated[
+        Optional[bool],
+        Field(description="True = soft-delete the project; False = restore."),
+    ] = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Update project title, users, or workflow.
+    """Update project title, users, or soft-delete state.
 
+    API CONTRACT: YouGile's UpdateProjectDto exposes only `title`, `users`,
+    and `deleted`. There is no workflow field.
     NOTE: `users` is a full replacement; preserve existing members by
     merging with get_project output.
     """
     return await update_project_tool(
-        project_id=project_id, title=title, users=users, workflow_id=workflow_id,
+        project_id=project_id, title=title, users=users, deleted=deleted,
         workspace=workspace, ctx=ctx,
     )
 
@@ -545,7 +568,6 @@ async def list_boards(
 async def create_board(
     title: Annotated[str, Field(description="Board title.")],
     project_id: Annotated[str, Field(description="Parent project UUID.")],
-    workflow_id: Annotated[Optional[str], Field(description="Optional workflow UUID.")] = None,
     stickers: Annotated[
         Optional[Dict[str, Any]],
         Field(
@@ -563,11 +585,13 @@ async def create_board(
 ) -> dict:
     """Create a board inside a project.
 
+    API CONTRACT: YouGile's CreateBoardDto only accepts `title`, `projectId`,
+    and `stickers`. Workflow assignment is not part of board creation.
     RETURNS: {id} only — call get_board afterwards for full details.
     RELATED: create_column to add columns; create_task to populate them.
     """
     return await create_board_tool(
-        title=title, project_id=project_id, workflow_id=workflow_id,
+        title=title, project_id=project_id,
         stickers=stickers, workspace=workspace, ctx=ctx,
     )
 
@@ -586,7 +610,10 @@ async def get_board(
 async def update_board(
     board_id: UUIDParam,
     title: Annotated[Optional[str], Field(description="New title.")] = None,
-    workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
+    project_id: Annotated[
+        Optional[str],
+        Field(description="Move the board to a different project (UUID)."),
+    ] = None,
     stickers: Annotated[
         Optional[Dict[str, Any]],
         Field(description="StickersDto — see create_board for shape."),
@@ -598,12 +625,14 @@ async def update_board(
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Update a board's title, sticker visibility, or soft-delete state.
+    """Update a board's title, parent project, sticker visibility, or soft-delete state.
 
+    API CONTRACT: YouGile's UpdateBoardDto exposes only `title`, `projectId`,
+    `stickers`, and `deleted`. There is no workflow field.
     NOTE: only the fields you pass are touched.
     """
     return await update_board_tool(
-        board_id=board_id, title=title, workflow_id=workflow_id,
+        board_id=board_id, title=title, project_id=project_id,
         stickers=stickers, deleted=deleted, workspace=workspace, ctx=ctx,
     )
 
@@ -675,12 +704,22 @@ async def update_column(
         Optional[int],
         Field(description="New palette index, 1-16.", ge=1, le=16),
     ] = None,
+    board_id: Annotated[
+        Optional[str],
+        Field(description="Move the column to a different board (UUID)."),
+    ] = None,
+    deleted: Annotated[
+        Optional[bool],
+        Field(description="True = soft-delete; False = restore."),
+    ] = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Update a column's title or color."""
+    """Update a column's title, color, parent board, or soft-delete state."""
     return await update_column_tool(
-        column_id=column_id, title=title, color=color, workspace=workspace, ctx=ctx,
+        column_id=column_id, title=title, color=color,
+        board_id=board_id, deleted=deleted,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -693,6 +732,24 @@ async def update_column(
 async def list_task_summaries(
     limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
+    sticker_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Server-side filter — only return tasks carrying this sticker. "
+                "Discover IDs via list_string_stickers."
+            ),
+        ),
+    ] = None,
+    sticker_state_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Server-side filter — only return tasks whose sticker value "
+                "matches this state ID. Typically combined with sticker_id."
+            ),
+        ),
+    ] = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -702,7 +759,9 @@ async def list_task_summaries(
     RELATED: list_tasks for the full task body.
     """
     return await list_task_summaries_tool(
-        limit=limit, offset=offset, workspace=workspace, ctx=ctx,
+        limit=limit, offset=offset,
+        sticker_id=sticker_id, sticker_state_id=sticker_state_id,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -726,19 +785,40 @@ async def list_tasks(
         bool,
         Field(description="True to include soft-deleted tasks."),
     ] = False,
+    sticker_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Server-side filter — only return tasks carrying this sticker. "
+                "Discover IDs via list_string_stickers."
+            ),
+        ),
+    ] = None,
+    sticker_state_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Server-side filter — only return tasks whose sticker value "
+                "matches this state ID (e.g. 'Priority=High'). Typically "
+                "combined with sticker_id."
+            ),
+        ),
+    ] = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List full task records with optional filters.
 
     USE WHEN: you need task bodies (description, stickers, deadlines).
-    NOTE: the API does NOT support filtering by sticker value, deadline
-    range, or creation date — those must be applied client-side after
-    fetching. For date filtering, prefer get_tasks_by_date.
+    NOTE: the API does NOT support filtering by deadline range or
+    creation date — those must be applied client-side after fetching.
+    For date filtering, prefer get_tasks_by_date. Sticker filtering is
+    supported via sticker_id / sticker_state_id (server-side).
     """
     return await list_tasks_tool(
         column_id=column_id, assigned_to=assigned_to, title=title,
         limit=limit, offset=offset, include_deleted=include_deleted,
+        sticker_id=sticker_id, sticker_state_id=sticker_state_id,
         workspace=workspace, ctx=ctx,
     )
 

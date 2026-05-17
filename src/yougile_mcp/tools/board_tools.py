@@ -70,7 +70,6 @@ async def list_boards_tool(
 async def create_board_tool(
     title: str,
     project_id: str,
-    workflow_id: str = None,
     stickers: Optional[Dict[str, Any]] = None,
     workspace: str = "default",
     ctx: Context = None,
@@ -80,12 +79,14 @@ async def create_board_tool(
     Args:
         title: Board title (required)
         project_id: ID of the parent project (required)
-        workflow_id: Optional workflow ID
         stickers: Board sticker visibility config (StickersDto). Keys:
                   timer, deadline, stopwatch, timeTracking, assignee, repeat
                   (each a bool); plus custom: {customStickerId: bool}.
                   Example: {"deadline": true, "timeTracking": true,
                             "custom": {"sticker-uuid": true}}
+
+    NOTE: The YouGile CreateBoardDto only accepts `title`, `projectId`, and
+    `stickers`. Workflow assignment is not part of board creation.
     """
     try:
         await ctx.info(f"Creating board: {title}")
@@ -98,10 +99,6 @@ async def create_board_tool(
             "title": title,
             "projectId": project_id
         }
-
-        if workflow_id is not None:
-            workflow_id = validate_uuid(workflow_id, "workflow_id")
-            board_data["workflowId"] = workflow_id
 
         if stickers is not None:
             if not isinstance(stickers, dict):
@@ -159,7 +156,7 @@ async def get_board_tool(board_id: str, workspace: str = "default", ctx: Context
 async def update_board_tool(
     board_id: str,
     title: str = None,
-    workflow_id: str = None,
+    project_id: Optional[str] = None,
     stickers: Optional[Dict[str, Any]] = None,
     deleted: Optional[bool] = None,
     workspace: str = "default",
@@ -170,9 +167,12 @@ async def update_board_tool(
     Args:
         board_id: ID of the board to update
         title: New board title
-        workflow_id: New workflow ID
+        project_id: Move the board to a different project (UUID).
         stickers: Board sticker visibility config (StickersDto). See create_board_tool.
         deleted: Soft-delete board (True) or restore (False).
+
+    NOTE: The YouGile UpdateBoardDto only accepts `title`, `projectId`,
+    `stickers`, and `deleted`. There is no workflow field.
     """
     try:
         await ctx.info(f"Updating board: {board_id}")
@@ -186,9 +186,9 @@ async def update_board_tool(
             title = validate_non_empty_string(title, "title")
             board_data["title"] = title
 
-        if workflow_id is not None:
-            workflow_id = validate_uuid(workflow_id, "workflow_id")
-            board_data["workflowId"] = workflow_id
+        if project_id is not None:
+            project_id = validate_uuid(project_id, "project_id")
+            board_data["projectId"] = project_id
 
         if stickers is not None:
             if not isinstance(stickers, dict):

@@ -363,10 +363,10 @@ def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
 
     if isinstance(data, dict):
         c, unknown = _strip_and_include(data)
+        meta: dict = {"verbosity": "custom"}
         if unknown:
-            meta: dict = {"verbosity": "custom", "unknown_includes": sorted(unknown)}
-            return {"_meta": meta, **c}
-        return c
+            meta["unknown_includes"] = sorted(unknown)
+        return {"_meta": meta, **c}
 
     return data
 
@@ -434,6 +434,10 @@ def apply_verbosity(
         - Unknown ``dto_type`` is passed through untouched.
     """
     if verbosity == "full":
+        # full = pass-through, но include[] всё равно применяем если задан
+        if include and isinstance(data, dict) and dto_type in _COMPACTORS:
+            obj, unknown = apply_includes(dict(data), data, include, dto_type)
+            return obj
         return data
 
     if dto_type not in _COMPACTORS:
@@ -449,9 +453,13 @@ def apply_verbosity(
     if isinstance(data, dict) and "paging" in data and "content" in data:
         compacted_content: list[Any] = []
         all_omitted: set[str] = set()
+        all_unknown: set[str] = set()
         for item in data["content"]:
             if isinstance(item, dict):
                 c, omitted = compactor(item, is_list=True) if dto_type == "task" else compactor(item)
+                if include:
+                    c, unknown = apply_includes(c, item, include, dto_type)
+                    all_unknown.update(unknown)
                 if is_list:
                     hints = build_hints(item, dto_type)  # строим по СЫРОМУ item
                     if hints is not None:
@@ -465,8 +473,11 @@ def apply_verbosity(
         for k, v in data.items():
             if k not in ("paging", "content"):
                 out[k] = v
-        if all_omitted:
-            out["_meta"] = _make_meta(verbosity, omitted=sorted(all_omitted))
+        out["_meta"] = _make_meta(
+            verbosity,
+            omitted=sorted(all_omitted) if all_omitted else None,
+            unknown_includes=sorted(all_unknown) if all_unknown else None,
+        )
         return out
 
     # Case 2: bare list of dicts
@@ -474,7 +485,9 @@ def apply_verbosity(
         compacted_items: list[Any] = []
         for item in data:
             if isinstance(item, dict):
-                c, _omitted = compactor(item)
+                c, _omitted = compactor(item, is_list=True) if dto_type == "task" else compactor(item)
+                if include:
+                    c, _unknown = apply_includes(c, item, include, dto_type)
                 compacted_items.append(c)
             else:
                 compacted_items.append(item)
@@ -485,10 +498,18 @@ def apply_verbosity(
     # Case 3: single dict
     if isinstance(data, dict):
         compacted, omitted = compactor(data)
-        if omitted:
-            # _meta-first ordering: agents tend to scan top-of-object first.
-            return {"_meta": _make_meta(verbosity, omitted=omitted), **compacted}
-        return compacted
+        unknown_keys: list[str] = []
+        if include:
+            compacted, unknown_keys = apply_includes(compacted, data, include, dto_type)
+        # _meta присутствует всегда для compact (spec §1.7)
+        return {
+            "_meta": _make_meta(
+                verbosity,
+                omitted=omitted if omitted else None,
+                unknown_includes=unknown_keys if unknown_keys else None,
+            ),
+            **compacted,
+        }
 
     # Anything else (None, scalar) — leave alone.
     return data

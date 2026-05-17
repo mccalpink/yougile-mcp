@@ -67,9 +67,11 @@ def test_include_idempotent_at_compact():
 
 
 def test_include_none_at_custom_returns_only_id():
-    """include=None при custom → только id (базовый случай Task 1.1)."""
+    """include=None при custom → только id + _meta (spec §1.7, базовый случай Task 1.1)."""
     result = apply_verbosity(SAMPLE_TASK, dto_type="task", verbosity="custom", include=None)
-    assert result == {"id": "abc-123"}
+    assert result["id"] == "abc-123"
+    assert result["_meta"]["verbosity"] == "custom"
+    assert set(result.keys()) == {"id", "_meta"}
 
 
 def test_include_multiple_fields():

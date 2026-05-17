@@ -3,10 +3,13 @@ from src.utils.verbosity import apply_verbosity
 
 
 def test_custom_returns_only_id_for_single_dict():
-    """custom mode: single dict → только id, всё остальное дропнуто."""
+    """custom mode: single dict → только id + _meta, всё остальное дропнуто (spec §1.7)."""
     data = {"id": "abc-123", "title": "Задача", "columnId": "col-1", "completed": False}
     result = apply_verbosity(data, dto_type="task", verbosity="custom")
-    assert result == {"id": "abc-123"}
+    # Spec §1.7: _meta.verbosity присутствует всегда
+    assert result["id"] == "abc-123"
+    assert result["_meta"]["verbosity"] == "custom"
+    assert set(result.keys()) == {"id", "_meta"}
 
 
 def test_custom_returns_only_ids_in_paging_envelope():

@@ -322,6 +322,81 @@ async def list_workspaces(ctx: Context = None) -> list[dict]:
     return [w.to_dict() for w in _registry.list_workspaces()]
 
 
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
+async def set_active_workspace(
+    slug: Annotated[str, Field(
+        description=(
+            "Slug активного workspace (компании) для этой сессии. "
+            "После вызова все тулы без явного workspace используют этот slug. "
+            "Slug должен совпадать с настроенным YOUGILE_KEY_<SLUG>. "
+            "USE WHEN: пользователь говорит 'работаем с компанией X' или "
+            "'переключись на клиента Y'. "
+            "DO NOT USE: если пользователь уже назвал workspace явно в параметре тула."
+        )
+    )],
+    ctx: Context = None,
+) -> dict:
+    """
+    Устанавливает активный workspace для текущей MCP-сессии.
+
+    После вызова все тулы, не получившие явный workspace, используют этот slug.
+    Не персистентен между сессиями.
+    """
+    available = registry.slugs()
+    if slug not in available:
+        return {
+            "error": f"Workspace '{slug}' не настроен.",
+            "available_workspaces": available,
+            "hint": f"Настройте YOUGILE_KEY_{slug.upper()}=... в .env и перезапустите сервер.",
+        }
+    if ctx is not None:
+        set_active(id(ctx.session), slug)
+    return {
+        "active_workspace": slug,
+        "session_id": id(ctx.session) if ctx else None,
+        "available_workspaces": available,
+    }
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+)
+async def get_active_workspace(ctx: Context = None) -> dict:
+    """
+    Возвращает текущий активный workspace для этой MCP-сессии.
+
+    Используй чтобы проверить какой workspace будут использовать тулы по умолчанию.
+    USE WHEN: нужно подтвердить активный workspace перед серией операций.
+    RETURNS: active_workspace (null если не установлен), effective_workspace (с учётом
+    fallback на 'default'), available_workspaces (все настроенные slug'ы).
+    """
+    available = registry.slugs()
+    active = get_active(id(ctx.session)) if ctx is not None else None
+    effective = active if active is not None else "default"
+    return {
+        "active_workspace": active,
+        "effective_workspace": effective,
+        "available_workspaces": available,
+        "hint": (
+            None if active is not None
+            else "Активный workspace не установлен. "
+                 "Вызови set_active_workspace(slug) чтобы установить."
+        ),
+    }
+
+
 @mcp.tool(annotations=ANN_READ)
 async def get_user_context(ctx: Context = None) -> str:
     """Return server-side user context (default project/board hints, if configured).

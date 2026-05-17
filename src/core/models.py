@@ -3,9 +3,31 @@ Pydantic models for structured output in MCP tools.
 Provides type-safe data structures for YouGile API responses.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
+
+
+# Literal type aliases (enums from YouGile OpenAPI) — reused in tool signatures
+# so FastMCP exposes them as JSON-Schema enums to the client.
+
+TaskColor = Literal[
+    "task-primary",
+    "task-gray",
+    "task-red",
+    "task-pink",
+    "task-yellow",
+    "task-green",
+    "task-turquoise",
+    "task-blue",
+    "task-violet",
+]
+"""Допустимые цвета карточки задачи на доске (CreateTaskDto.color enum)."""
+
+MessageReact = Literal[
+    "👍", "👎", "👏", "🙂", "😀", "😕", "🎉", "❤", "🚀", "✔",
+]
+"""Допустимые админ-реакции на сообщение чата (UpdateChatMessageDto.react enum)."""
 
 
 # Base models

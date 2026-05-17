@@ -1,0 +1,200 @@
+"""
+YouGile Webhook MCP tools.
+
+Subscriptions to company events (3 endpoints):
+- POST   /webhooks         create
+- GET    /webhooks         list
+- PUT    /webhooks/{id}    update / soft-delete
+"""
+
+from typing import List, Dict, Any, Optional
+from mcp.server.fastmcp import Context
+from ...core.registry import registry
+from ...core.client import YouGileClient
+from ...core.exceptions import YouGileError, ValidationError
+from ...api import webhooks
+from ...utils.validation import validate_uuid, validate_non_empty_string
+
+
+def _validate_filters(filters: Any, field: str = "filters") -> List[Dict[str, Any]]:
+    """Lightweight validation for the WebhookFilters array.
+
+    YouGile schema marks `filters` as required, but an empty array is allowed
+    when the caller wants no filtering. Each item must be a dict with `name`
+    and `value` keys. We do not enforce the actual filter-name vocabulary
+    (location/title/chat_message) because YouGile may extend it.
+    """
+    if filters is None:
+        filters = []
+    if not isinstance(filters, list):
+        raise ValidationError(f"{field} must be a list", field=field)
+    for i, item in enumerate(filters):
+        if not isinstance(item, dict):
+            raise ValidationError(f"{field}[{i}] must be an object", field=field)
+        if "name" not in item or "value" not in item:
+            raise ValidationError(
+                f"{field}[{i}] must contain 'name' and 'value' keys",
+                field=field,
+            )
+    return filters
+
+
+async def list_webhooks_tool(
+    workspace: str,
+    limit: int = 50,
+    offset: int = 0,
+    include_deleted: bool = False,
+    ctx: Context = None,
+) -> List[Dict[str, Any]]:
+    """List configured webhook subscriptions for the workspace.
+
+    NOTE: YouGile API does not support server-side pagination for /webhooks;
+    we apply limit/offset client-side after fetching the full list.
+    """
+    try:
+        if ctx:
+            await ctx.info(
+                f"Fetching webhooks (limit={limit}, offset={offset}, "
+                f"include_deleted={include_deleted})..."
+            )
+
+        if not isinstance(limit, int) or limit < 1:
+            raise ValidationError("limit must be a positive integer", field="limit")
+        if not isinstance(offset, int) or offset < 0:
+            raise ValidationError("offset must be a non-negative integer", field="offset")
+
+        async with YouGileClient(registry.get(workspace)) as client:
+            result = await webhooks.get_webhooks(client, include_deleted=include_deleted)
+
+        page = result[offset : offset + limit]
+
+        if ctx:
+            await ctx.info(
+                f"Successfully retrieved {len(page)} webhook(s) (of {len(result)} total)"
+            )
+        return page
+
+    except ValidationError as e:
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
+        raise
+    except YouGileError as e:
+        if ctx:
+            await ctx.error(f"API error while fetching webhooks: {e.message}")
+        raise
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
+        raise
+
+
+async def create_webhook_tool(
+    workspace: str,
+    url: str,
+    event: str,
+    filters: Optional[List[Dict[str, Any]]] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Create a webhook subscription.
+
+    Args:
+        workspace: workspace slug.
+        url: target URL that will receive the event POST.
+        event: subscription event, e.g. "task-created", "task-*", ".*".
+        filters: optional extra filters (location/title/chat_message). Pass an
+            empty list to subscribe without filters — YouGile requires the field
+            to be present.
+    """
+    try:
+        if ctx:
+            await ctx.info(f"Creating webhook for event '{event}' -> {url}")
+
+        url = validate_non_empty_string(url, "url")
+        event = validate_non_empty_string(event, "event")
+        filters = _validate_filters(filters)
+
+        payload: Dict[str, Any] = {
+            "url": url,
+            "event": event,
+            "filters": filters,
+        }
+
+        async with YouGileClient(registry.get(workspace)) as client:
+            result = await webhooks.create_webhook(client, payload)
+
+        if ctx:
+            await ctx.info(f"Successfully created webhook with ID: {result.get('id')}")
+        return result
+
+    except ValidationError as e:
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
+        raise
+    except YouGileError as e:
+        if ctx:
+            await ctx.error(f"API error while creating webhook: {e.message}")
+        raise
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
+        raise
+
+
+async def update_webhook_tool(
+    workspace: str,
+    webhook_id: str,
+    url: Optional[str] = None,
+    event: Optional[str] = None,
+    filters: Optional[List[Dict[str, Any]]] = None,
+    deleted: bool = False,
+    disabled: Optional[bool] = None,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Update or soft-delete a webhook subscription.
+
+    Only the fields explicitly provided are sent to the API. Pass `deleted=True`
+    to soft-delete the webhook, `disabled=True` to pause without removing it.
+    """
+    try:
+        if ctx:
+            await ctx.info(f"Updating webhook: {webhook_id}")
+
+        webhook_id = validate_uuid(webhook_id, "webhook_id")
+
+        payload: Dict[str, Any] = {}
+        if url is not None:
+            payload["url"] = validate_non_empty_string(url, "url")
+        if event is not None:
+            payload["event"] = validate_non_empty_string(event, "event")
+        if filters is not None:
+            payload["filters"] = _validate_filters(filters)
+        if disabled is not None:
+            payload["disabled"] = bool(disabled)
+        if deleted:
+            payload["deleted"] = True
+
+        if not payload:
+            raise ValidationError(
+                "At least one field (url, event, filters, disabled, deleted) must be provided"
+            )
+
+        async with YouGileClient(registry.get(workspace)) as client:
+            result = await webhooks.update_webhook(client, webhook_id, payload)
+
+        if ctx:
+            action = "deleted" if deleted else "updated"
+            await ctx.info(f"Successfully {action} webhook: {webhook_id}")
+        return result
+
+    except ValidationError as e:
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
+        raise
+    except YouGileError as e:
+        if ctx:
+            await ctx.error(f"API error while updating webhook: {e.message}")
+        raise
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
+        raise

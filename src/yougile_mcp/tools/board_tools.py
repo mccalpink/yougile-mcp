@@ -72,30 +72,50 @@ async def create_board_tool(
     title: str,
     project_id: str,
     workflow_id: str = None,
+    stickers: Optional[Dict[str, Any]] = None,
     ctx: Context = None
 ) -> models.CreatedEntity:
-    """Create a new board in a project."""
+    """Create a new board in a project.
+
+    Args:
+        title: Board title (required)
+        project_id: ID of the parent project (required)
+        workflow_id: Optional workflow ID
+        stickers: Board sticker visibility config (StickersDto). Keys:
+                  timer, deadline, stopwatch, timeTracking, assignee, repeat
+                  (each a bool); plus custom: {customStickerId: bool}.
+                  Example: {"deadline": true, "timeTracking": true,
+                            "custom": {"sticker-uuid": true}}
+    """
     try:
         await ctx.info(f"Creating board: {title}")
-        
+
         # Validate inputs
         title = validate_non_empty_string(title, "title")
         project_id = validate_uuid(project_id, "project_id")
-        
+
         board_data = {
             "title": title,
             "projectId": project_id
         }
-        
+
         if workflow_id is not None:
             workflow_id = validate_uuid(workflow_id, "workflow_id")
             board_data["workflowId"] = workflow_id
-        
+
+        if stickers is not None:
+            if not isinstance(stickers, dict):
+                raise ValidationError(
+                    "stickers must be a dict (StickersDto)",
+                    field="stickers",
+                )
+            board_data["stickers"] = stickers
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.create_board(client, board_data)
-            
+
         created_entity = models.CreatedEntity(**result)
-        
+
         await ctx.info(f"✅ Successfully created board with ID: {created_entity.id}")
         return created_entity
         
@@ -141,25 +161,46 @@ async def update_board_tool(
     board_id: str,
     title: str = None,
     workflow_id: str = None,
+    stickers: Optional[Dict[str, Any]] = None,
+    deleted: Optional[bool] = None,
     ctx: Context = None
 ) -> models.Board:
-    """Update board information."""
+    """Update board information.
+
+    Args:
+        board_id: ID of the board to update
+        title: New board title
+        workflow_id: New workflow ID
+        stickers: Board sticker visibility config (StickersDto). See create_board_tool.
+        deleted: Soft-delete board (True) or restore (False).
+    """
     try:
         await ctx.info(f"Updating board: {board_id}")
-        
+
         board_id = validate_uuid(board_id, "board_id")
-        
+
         # Build update data with only provided fields
         board_data = {}
-        
+
         if title is not None:
             title = validate_non_empty_string(title, "title")
             board_data["title"] = title
-            
+
         if workflow_id is not None:
             workflow_id = validate_uuid(workflow_id, "workflow_id")
             board_data["workflowId"] = workflow_id
-            
+
+        if stickers is not None:
+            if not isinstance(stickers, dict):
+                raise ValidationError(
+                    "stickers must be a dict (StickersDto)",
+                    field="stickers",
+                )
+            board_data["stickers"] = stickers
+
+        if deleted is not None:
+            board_data["deleted"] = deleted
+
         if not board_data:
             raise ValidationError("At least one field must be provided for update")
         

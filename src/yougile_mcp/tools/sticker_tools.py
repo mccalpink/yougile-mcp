@@ -111,6 +111,45 @@ async def get_string_sticker_state_tool(
         raise
 
 
+async def get_sprint_sticker_state_tool(
+    workspace: str,
+    sticker_id: str,
+    state_id: str,
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get information about a specific state of a sprint sticker."""
+    try:
+        if ctx:
+            await ctx.info(f"Fetching sprint sticker state: {sticker_id}/{state_id}")
+
+        sticker_id = validate_uuid(sticker_id, "sticker_id")
+        if not state_id or not isinstance(state_id, str):
+            raise ValidationError("state_id is required", field="state_id")
+        state_id = validate_uuid(state_id, "state_id")
+
+        async with YouGileClient(registry.get(workspace)) as client:
+            result = await stickers.get_sprint_sticker_state(client, sticker_id, state_id)
+
+        if ctx:
+            await ctx.info(
+                f"Successfully retrieved sprint sticker state: {result.get('name', state_id)}"
+            )
+        return result
+
+    except ValidationError as e:
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
+        raise
+    except YouGileError as e:
+        if ctx:
+            await ctx.error(f"API error while fetching sprint sticker state: {e.message}")
+        raise
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
+        raise
+
+
 async def decode_task_stickers_tool(
     workspace: str,
     stickers_dict: Dict[str, str],

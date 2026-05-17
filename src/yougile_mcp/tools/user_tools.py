@@ -179,6 +179,36 @@ async def update_user_tool(
         raise
 
 
+async def get_me_tool(workspace: str, ctx: Context = None) -> Dict[str, Any]:
+    """Get the user account associated with the workspace's API key.
+
+    Useful for resolving the current bot/user identity (e.g. to filter tasks
+    by `assigned_to=<me>` or `created_by=<me>`).
+    """
+    try:
+        if ctx:
+            await ctx.info(f"Fetching current user for workspace '{workspace}'...")
+
+        async with YouGileClient(registry.get(workspace)) as client:
+            result = await users.get_me(client)
+
+        if ctx:
+            await ctx.info(
+                f"Successfully retrieved current user: "
+                f"{result.get('realName') or result.get('email') or result.get('id')}"
+            )
+        return result
+
+    except YouGileError as e:
+        if ctx:
+            await ctx.error(f"API error while fetching current user: {e.message}")
+        raise
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
+        raise
+
+
 async def remove_user_tool(workspace: str, user_id: str, ctx: Context) -> Dict[str, Any]:
     """Remove user from the company."""
     try:

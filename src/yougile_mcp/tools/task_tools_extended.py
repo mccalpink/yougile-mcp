@@ -6,6 +6,7 @@ Additional task operations (update, chat subscribers).
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import Context
 from ...core import models
+from ...core.models import TaskColor
 from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
@@ -28,63 +29,81 @@ async def update_task_tool(
     completed: bool = None,
     archived: bool = None,
     deleted: bool = None,
+    color: Optional[TaskColor] = None,
+    stopwatch: Optional[Dict[str, Any]] = None,
+    timer: Optional[Dict[str, Any]] = None,
+    deal: Optional[Dict[str, Any]] = None,
+    id_task_common: Optional[str] = None,
+    id_task_project: Optional[str] = None,
+    extension_data: Optional[Dict[str, Any]] = None,
     ctx: Context = None
 ) -> Dict[str, Any]:
     """Update task information. Description requires HTML format.
-    
+
     Args:
         task_id: ID of the task to update
         title: New task title
         description: Task description in HTML format (use <br> for line breaks, <b>bold</b>, <i>italic</i>, etc)
-        column_id: Move task to different column
-        assigned_users: List of user IDs to assign task to
-        deadline: Deadline sticker data (dict with deadline, startDate, withTime fields)
-        time_tracking: Time tracking sticker data (dict with plan, work fields)
-        stickers: Custom stickers (dict of sticker_id -> state_id)
-        subtasks: List of subtask IDs to assign to this task
-        checklists: List of checklist groups (dict with title and items: [{"title": "Item", "isCompleted": false}])
+        column_id: Move task to different column. Pass "-" to remove task from any column.
+        assigned_users: List of user IDs to assign task to (REPLACE — not append)
+        deadline: Deadline sticker data (dict with deadline, startDate, withTime, deleted fields)
+        time_tracking: Time tracking sticker data (dict with plan, work, deleted fields)
+        stickers: Custom stickers (dict of sticker_id -> state_id; "-" to detach, "empty" for empty)
+        subtasks: List of subtask IDs (UUIDs of child tasks) — REPLACE
+        checklists: List of checklist groups (dict with title and items)
         completed: Mark task as completed (True) or not completed (False)
         archived: Archive task (True) or unarchive (False)
-        deleted: Mark task as deleted (True) or restore (False)
+        deleted: Soft-delete task (True) or restore (False)
+        color: Task card color on the board. One of: task-primary, task-gray,
+               task-red, task-pink, task-yellow, task-green, task-turquoise,
+               task-blue, task-violet
+        stopwatch: Stopwatch sticker data (dict with running, deleted fields)
+        timer: Timer sticker data (dict with running, seconds, deleted fields)
+        deal: CRM deal data (DealDataDto) — for tasks in CRM projects
+        id_task_common: Cross-company human-readable task ID (API field: idTaskCommon)
+        id_task_project: Per-project human-readable task ID (API field: idTaskProject)
+        extension_data: Arbitrary data used by YouGile extensions (API field: extensionData)
     """
     try:
         if ctx:
             await ctx.info(f"Updating task: {task_id}")
-        
+
         task_id = validate_uuid(task_id, "task_id")
-        
+
         # Build update data with only provided fields
         task_data = {}
-        
+
         if title is not None:
             title = validate_non_empty_string(title, "title")
             task_data["title"] = title
-            
+
         if description is not None:
             # Description accepts HTML format - no validation needed for content
             task_data["description"] = description
-            
+
         if column_id is not None:
-            column_id = validate_uuid(column_id, "column_id")
+            # API accepts "-" as a sentinel to detach the task from any column.
+            if column_id != "-":
+                column_id = validate_uuid(column_id, "column_id")
             task_data["columnId"] = column_id
-            
+
         if assigned_users is not None:
             assigned_users = [validate_uuid(user_id, "user_id") for user_id in assigned_users]
             task_data["assigned"] = assigned_users
-            
+
         if deadline is not None:
             task_data["deadline"] = deadline
-            
+
         if time_tracking is not None:
             task_data["timeTracking"] = time_tracking
-            
+
         if stickers is not None:
             task_data["stickers"] = stickers
-            
+
         if subtasks is not None:
             subtasks = [validate_uuid(subtask_id, "subtask_id") for subtask_id in subtasks]
             task_data["subtasks"] = subtasks
-            
+
         if checklists is not None:
             # Validate checklist structure
             for checklist in checklists:
@@ -103,26 +122,58 @@ async def update_task_tool(
                     elif not isinstance(item["isCompleted"], bool):
                         raise ValidationError("Checklist item 'isCompleted' must be a boolean")
             task_data["checklists"] = checklists
-            
+
         if completed is not None:
             task_data["completed"] = completed
-            
+
         if archived is not None:
             task_data["archived"] = archived
-            
+
         if deleted is not None:
             task_data["deleted"] = deleted
-            
+
+        if color is not None:
+            # Defensive Literal check (FastMCP also enforces via JSON schema)
+            valid_colors = (
+                "task-primary", "task-gray", "task-red", "task-pink",
+                "task-yellow", "task-green", "task-turquoise",
+                "task-blue", "task-violet",
+            )
+            if color not in valid_colors:
+                raise ValidationError(
+                    f"color must be one of {valid_colors}, got: {color!r}",
+                    field="color",
+                )
+            task_data["color"] = color
+
+        if stopwatch is not None:
+            task_data["stopwatch"] = stopwatch
+
+        if timer is not None:
+            task_data["timer"] = timer
+
+        if deal is not None:
+            task_data["deal"] = deal
+
+        if id_task_common is not None:
+            task_data["idTaskCommon"] = id_task_common
+
+        if id_task_project is not None:
+            task_data["idTaskProject"] = id_task_project
+
+        if extension_data is not None:
+            task_data["extensionData"] = extension_data
+
         if not task_data:
             raise ValidationError("At least one field must be provided for update")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.update_task(client, task_id, task_data)
-            
+
         if ctx:
             await ctx.info(f"✅ Successfully updated task with ID: {result.get('id')}")
         return result
-        
+
     except ValidationError as e:
         if ctx:
             await ctx.error(f"Validation failed: {e.message}")

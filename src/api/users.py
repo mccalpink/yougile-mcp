@@ -14,6 +14,11 @@ async def get_users(client: YouGileClient) -> List[Dict[str, Any]]:
     return response.get("content", [])
 
 
+async def get_me(client: YouGileClient) -> Dict[str, Any]:
+    """Get the user account associated with the current API key."""
+    return await client.get("/users/me")
+
+
 async def invite_user(client: YouGileClient, user_data: Dict[str, Any]) -> Dict[str, Any]:
     """Invite user to company."""
     return await client.post("/users", json=user_data)

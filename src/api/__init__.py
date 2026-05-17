@@ -15,20 +15,22 @@ from . import (
     chats,
     files,
     webhooks,
+    crm,
 )
 
 __all__ = [
     "auth",
-    "company", 
+    "company",
     "departments",
     "users",
     "projects",
     "project_roles",
     "boards",
-    "columns", 
+    "columns",
     "tasks",
     "stickers",
     "chats",
     "files",
     "webhooks",
+    "crm",
 ]

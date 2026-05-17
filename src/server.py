@@ -6,10 +6,12 @@ Registers all tools, resources, and prompts for YouGile API access.
 """
 
 import asyncio
+from typing import Optional
 from mcp.server.fastmcp import FastMCP, Context
 from .config import settings
 from .core import auth
 from .core.client import YouGileClient
+from .core.models import TaskColor, MessageReact
 from .api import auth as auth_api
 from .yougile_mcp.tools.auth_tools import (
     get_companies_tool, 
@@ -23,6 +25,7 @@ from .yougile_mcp.tools.user_tools import (
     get_user_tool,
     update_user_tool,
     remove_user_tool,
+    get_me_tool,
 )
 from .yougile_mcp.tools.project_tools import (
     list_projects_tool,
@@ -69,7 +72,20 @@ from .yougile_mcp.tools.sticker_tools import (
     list_string_stickers_tool,
     get_string_sticker_tool,
     get_string_sticker_state_tool,
+    get_sprint_sticker_state_tool,
     decode_task_stickers_tool,
+)
+from .yougile_mcp.tools.webhook_tools import (
+    list_webhooks_tool,
+    create_webhook_tool,
+    update_webhook_tool,
+)
+from .yougile_mcp.tools.file_tools import (
+    upload_file_tool,
+)
+from .yougile_mcp.tools.crm_tools import (
+    create_crm_contact_tool,
+    find_crm_contact_by_external_id_tool,
 )
 from .yougile_mcp.resources.api_docs import (
     get_api_overview,
@@ -241,12 +257,26 @@ async def list_boards(workspace: str = "default", project_id: str = None, title:
     return await list_boards_tool(workspace, project_id, title, limit, offset, include_deleted, ctx)
 
 @mcp.tool()
-async def create_board(workspace: str = "default", title: str = None, project_id: str = None, workflow_id: str = None, ctx: Context = None) -> dict:
+async def create_board(
+    workspace: str = "default",
+    title: str = None,
+    project_id: str = None,
+    workflow_id: str = None,
+    stickers: dict = None,
+    ctx: Context = None,
+) -> dict:
     """Create a new board in a project.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    stickers: Board sticker visibility (StickersDto).
+    Keys (all booleans): timer, deadline, stopwatch, timeTracking, assignee, repeat.
+    Plus `custom`: {customStickerUuid: bool, ...}.
+    Example: {"deadline": true, "timeTracking": true, "custom": {"<uuid>": true}}
     """
-    return await create_board_tool(workspace, title, project_id, workflow_id, ctx)
+    return await create_board_tool(
+        workspace, title, project_id, workflow_id, stickers=stickers, ctx=ctx
+    )
 
 @mcp.tool()
 async def get_board(workspace: str = "default", board_id: str = None, ctx: Context = None) -> dict:
@@ -257,12 +287,31 @@ async def get_board(workspace: str = "default", board_id: str = None, ctx: Conte
     return await get_board_tool(workspace, board_id, ctx)
 
 @mcp.tool()
-async def update_board(workspace: str = "default", board_id: str = None, title: str = None, workflow_id: str = None, ctx: Context = None) -> dict:
+async def update_board(
+    workspace: str = "default",
+    board_id: str = None,
+    title: str = None,
+    workflow_id: str = None,
+    stickers: dict = None,
+    deleted: bool = None,
+    ctx: Context = None,
+) -> dict:
     """Update board information.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    stickers: Board sticker visibility (StickersDto). See create_board.
+    deleted: Soft-delete the board (True) or restore (False).
     """
-    return await update_board_tool(workspace, board_id, title, workflow_id, ctx)
+    return await update_board_tool(
+        workspace,
+        board_id,
+        title,
+        workflow_id,
+        stickers=stickers,
+        deleted=deleted,
+        ctx=ctx,
+    )
 
 # Column Management Tools
 @mcp.tool()
@@ -315,10 +364,32 @@ async def list_tasks(workspace: str = "default", column_id: str = None, assigned
     return await list_tasks_tool(workspace, column_id, assigned_to, title, limit, offset, include_deleted, ctx)
 
 @mcp.tool()
-async def create_task(workspace: str = "default", title: str = None, column_id: str = None, description: str = None, assigned_users: list = None, deadline: dict = None, time_tracking: dict = None, stickers: dict = None, subtasks: list = None, checklists: list = None, completed: bool = None, archived: bool = None, ctx: Context = None) -> dict:
+async def create_task(
+    workspace: str = "default",
+    title: str = None,
+    column_id: str = None,
+    description: str = None,
+    assigned_users: list = None,
+    deadline: dict = None,
+    time_tracking: dict = None,
+    stickers: dict = None,
+    subtasks: list = None,
+    checklists: list = None,
+    completed: bool = None,
+    archived: bool = None,
+    color: Optional[TaskColor] = None,
+    stopwatch: dict = None,
+    timer: dict = None,
+    deal: dict = None,
+    id_task_common: str = None,
+    id_task_project: str = None,
+    extension_data: dict = None,
+    ctx: Context = None,
+) -> dict:
     """Create a new task.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    column_id: OPTIONAL — API allows tasks without a column (e.g. standalone subtasks).
 
     🚨 CRITICAL: description parameter MUST be in HTML format!
     - Use <br> for line breaks (NOT \\n)
@@ -330,8 +401,34 @@ async def create_task(workspace: str = "default", title: str = None, column_id: 
     - Structure: [{"title": "Checklist Name", "items": [{"title": "Item 1", "isCompleted": false}]}]
     - Multiple checklists: [{"title": "Backend", "items": [...]}, {"title": "Frontend", "items": [...]}]
     - Each item MUST have "isCompleted" field (boolean)
+
+    🎨 color: card color on the board, one of: task-primary, task-gray, task-red,
+    task-pink, task-yellow, task-green, task-turquoise, task-blue, task-violet.
+
+    🆔 id_task_common / id_task_project: human-readable IDs (e.g. "ID-484", "DEV-484").
     """
-    return await create_task_tool(workspace, title, column_id, description, assigned_users, deadline, time_tracking, stickers, subtasks, checklists, completed, archived, ctx)
+    return await create_task_tool(
+        workspace,
+        title,
+        column_id,
+        description,
+        assigned_users,
+        deadline,
+        time_tracking,
+        stickers,
+        subtasks,
+        checklists,
+        completed,
+        archived,
+        color=color,
+        stopwatch=stopwatch,
+        timer=timer,
+        deal=deal,
+        id_task_common=id_task_common,
+        id_task_project=id_task_project,
+        extension_data=extension_data,
+        ctx=ctx,
+    )
 
 @mcp.tool()
 async def get_task(workspace: str = "default", task_id: str = None, ctx: Context = None) -> dict:
@@ -357,8 +454,31 @@ async def get_tasks_by_date(workspace: str = "default", assigned_to: str = None,
     return await get_tasks_by_date_tool(workspace, assigned_to, created_by, target_date, completed_only, limit, ctx)
 
 @mcp.tool()
-async def update_task(workspace: str = "default", task_id: str = None, title: str = None, description: str = None, column_id: str = None, assigned_users: list = None, deadline: dict = None, time_tracking: dict = None, stickers: dict = None, subtasks: list = None, checklists: list = None, completed: bool = None, archived: bool = None, deleted: bool = None, ctx: Context = None) -> dict:
-    """Update task information.
+async def update_task(
+    workspace: str = "default",
+    task_id: str = None,
+    title: str = None,
+    description: str = None,
+    column_id: str = None,
+    assigned_users: list = None,
+    deadline: dict = None,
+    time_tracking: dict = None,
+    stickers: dict = None,
+    subtasks: list = None,
+    checklists: list = None,
+    completed: bool = None,
+    archived: bool = None,
+    deleted: bool = None,
+    color: Optional[TaskColor] = None,
+    stopwatch: dict = None,
+    timer: dict = None,
+    deal: dict = None,
+    id_task_common: str = None,
+    id_task_project: str = None,
+    extension_data: dict = None,
+    ctx: Context = None,
+) -> dict:
+    """Update task information. ONLY the provided fields are updated.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
 
@@ -372,8 +492,34 @@ async def update_task(workspace: str = "default", task_id: str = None, title: st
     - Structure: [{"title": "Checklist Name", "items": [{"title": "Item 1", "isCompleted": false}]}]
     - Multiple checklists: [{"title": "Backend", "items": [...]}, {"title": "Frontend", "items": [...]}]
     - Each item MUST have "isCompleted" field (boolean)
+
+    column_id: pass "-" to remove task from any column.
+    color: see create_task.
     """
-    return await update_task_tool(workspace, task_id, title, description, column_id, assigned_users, deadline, time_tracking, stickers, subtasks, checklists, completed, archived, deleted, ctx)
+    return await update_task_tool(
+        workspace,
+        task_id,
+        title,
+        description,
+        column_id,
+        assigned_users,
+        deadline,
+        time_tracking,
+        stickers,
+        subtasks,
+        checklists,
+        completed,
+        archived,
+        deleted,
+        color=color,
+        stopwatch=stopwatch,
+        timer=timer,
+        deal=deal,
+        id_task_common=id_task_common,
+        id_task_project=id_task_project,
+        extension_data=extension_data,
+        ctx=ctx,
+    )
 
 @mcp.tool()
 async def delete_task(workspace: str = "default", task_id: str = None, ctx: Context = None) -> dict:
@@ -516,12 +662,36 @@ async def list_group_chats(workspace: str = "default", ctx: Context = None) -> l
     return await list_group_chats_tool(workspace, ctx)
 
 @mcp.tool()
-async def create_group_chat(workspace: str = "default", title: str = None, participants: list = None, ctx: Context = None) -> dict:
-    """Create a new group chat.
+async def create_group_chat(
+    workspace: str = "default",
+    title: str = None,
+    users: dict = None,
+    user_role_map: dict = None,
+    role_config_map: dict = None,
+    ctx: Context = None,
+) -> dict:
+    """Create a new group chat. ALL of users/user_role_map/role_config_map
+    must be provided together for the chat to be functional.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    Field shapes (CreateGroupChatDto):
+    - users: {userId: {"notified": true|false}}
+    - user_role_map: {userId: roleSlug}   e.g. {"...": "owner", "...": "admin"}
+    - role_config_map: {roleSlug: {editProperties, editAdmins, editUsers,
+                                   sendMessages, removeMessages, ...}}
+
+    Calling with only `title` is permitted but the server is likely to reject
+    it — provide all four fields together.
     """
-    return await create_group_chat_tool(workspace, title, participants, ctx)
+    return await create_group_chat_tool(
+        workspace,
+        title,
+        users=users,
+        user_role_map=user_role_map,
+        role_config_map=role_config_map,
+        ctx=ctx,
+    )
 
 @mcp.tool()
 async def get_group_chat(workspace: str = "default", chat_id: str = None, ctx: Context = None) -> dict:
@@ -540,12 +710,27 @@ async def get_chat_messages(workspace: str = "default", chat_id: str = None, lim
     return await get_chat_messages_tool(workspace, chat_id, limit, ctx)
 
 @mcp.tool()
-async def send_chat_message(workspace: str = "default", chat_id: str = None, message: str = None, ctx: Context = None) -> dict:
+async def send_chat_message(
+    workspace: str = "default",
+    chat_id: str = None,
+    text: str = None,
+    text_html: str = None,
+    label: str = None,
+    ctx: Context = None,
+) -> dict:
     """Send a message to a chat (add comment to task or send group chat message).
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    text: plain-text body of the message.
+    text_html: HTML body. If omitted, defaults to <p>{text}</p>. Pass your own
+               HTML (<br>, <b>, <i>, lists, etc.) for formatting. Not escaped
+               server-side — sanitize untrusted input.
+    label: short label / quick link shown with the message (default "Comment").
     """
-    return await send_chat_message_tool(workspace, chat_id, message, ctx)
+    return await send_chat_message_tool(
+        workspace, chat_id, text, text_html=text_html, label=label, ctx=ctx
+    )
 
 @mcp.tool()
 async def get_chat_message(workspace: str = "default", chat_id: str = None, message_id: str = None, ctx: Context = None) -> dict:
@@ -556,12 +741,30 @@ async def get_chat_message(workspace: str = "default", chat_id: str = None, mess
     return await get_chat_message_tool(workspace, chat_id, message_id, ctx)
 
 @mcp.tool()
-async def update_chat_message(workspace: str = "default", chat_id: str = None, message_id: str = None, message: str = None, ctx: Context = None) -> dict:
-    """Update/edit a message in a chat.
+async def update_chat_message(
+    workspace: str = "default",
+    chat_id: str = None,
+    message_id: str = None,
+    label: str = None,
+    react: Optional[MessageReact] = None,
+    delete: bool = False,
+    ctx: Context = None,
+) -> dict:
+    """Update message metadata: label, admin reaction, or soft-delete.
+
+    Note: API does NOT support editing message text — only metadata.
+    UpdateChatMessageDto fields: deleted, label, react.
 
     workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    label: new label / quick link text for the message.
+    react: admin reaction emoji. One of: 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔.
+    delete: if True, soft-deletes the message.
     """
-    return await update_chat_message_tool(workspace, chat_id, message_id, message, ctx)
+    return await update_chat_message_tool(
+        workspace, chat_id, message_id,
+        label=label, react=react, delete=delete, ctx=ctx,
+    )
 
 # Task Comment Tools (convenient aliases)
 @mcp.tool()
@@ -585,6 +788,100 @@ async def add_task_comment(workspace: str = "default", task_id: str = None, comm
     - Plain text will display incorrectly in YouGile interface!
     """
     return await add_task_comment_tool(workspace, task_id, comment, ctx)
+
+# Webhook Tools
+@mcp.tool()
+async def list_webhooks(workspace: str = "default", limit: int = 50, offset: int = 0, include_deleted: bool = False, ctx: Context = None) -> list:
+    """List configured webhook subscriptions for the workspace.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    NOTE: YouGile API does not paginate /webhooks server-side; pagination is
+    applied client-side after fetching the full list.
+    """
+    return await list_webhooks_tool(workspace, limit, offset, include_deleted, ctx)
+
+@mcp.tool()
+async def create_webhook(workspace: str = "default", url: str = None, event: str = None, filters: list = None, ctx: Context = None) -> dict:
+    """Create a webhook subscription.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    Args:
+        url: target URL that will receive the event POST.
+        event: e.g. "task-created", "task-*", ".*".
+        filters: list of {name, value} filter objects. Pass [] for no filtering
+            (the field is required by YouGile API even when empty).
+    """
+    return await create_webhook_tool(workspace, url, event, filters or [], ctx)
+
+@mcp.tool()
+async def update_webhook(workspace: str = "default", webhook_id: str = None, url: str = None, event: str = None, filters: list = None, disabled: bool = None, deleted: bool = False, ctx: Context = None) -> dict:
+    """Update or soft-delete a webhook subscription.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    Pass deleted=True to soft-delete, disabled=True to pause without removing.
+    """
+    return await update_webhook_tool(workspace, webhook_id, url, event, filters, deleted, disabled, ctx)
+
+# File Tools
+@mcp.tool()
+async def upload_file(workspace: str = "default", path: str = None, filename: str = None, ctx: Context = None) -> dict:
+    """Upload a file from local filesystem to YouGile.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    Args:
+        path: absolute path to the file on the server filesystem.
+        filename: optional override for the name reported to YouGile.
+
+    Returns: {"result": "ok", "url": "/user-data/...", "fullUrl": "https://..."}
+    """
+    return await upload_file_tool(workspace, path, filename, ctx)
+
+# CRM Tools
+@mcp.tool()
+async def create_crm_contact(workspace: str = "default", project_id: str = None, title: str = None, position: str = None, phone: str = None, email: str = None, additional_phone: str = None, address: str = None, fields_extra: dict = None, ctx: Context = None) -> dict:
+    """Create a CRM contact person inside a CRM project.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    Convenience fields (position/phone/email/additional_phone/address) are merged
+    into the YouGile `fields` payload. Use `fields_extra` for any keys not exposed
+    as named arguments — they are merged last and override on key conflict.
+    """
+    return await create_crm_contact_tool(
+        workspace, project_id, title, position, phone, email, additional_phone, address, fields_extra, ctx
+    )
+
+@mcp.tool()
+async def find_crm_contact_by_external_id(workspace: str = "default", provider: str = None, chat_id: str = None, ctx: Context = None) -> dict:
+    """Find a CRM contact by external messenger ID.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+
+    Example: provider='wazzup', chat_id='chat-123'. Returns None if no contact
+    exists for the given external ID (YouGile 404 → None).
+    """
+    return await find_crm_contact_by_external_id_tool(workspace, provider, chat_id, ctx)
+
+# User extras
+@mcp.tool()
+async def get_me(workspace: str = "default", ctx: Context = None) -> dict:
+    """Get the user account associated with the workspace's API key.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    """
+    return await get_me_tool(workspace, ctx)
+
+# Sticker state for sprint
+@mcp.tool()
+async def get_sprint_sticker_state(workspace: str = "default", sticker_id: str = None, state_id: str = None, ctx: Context = None) -> dict:
+    """Get information about a specific state of a sprint sticker.
+
+    workspace: YouGile workspace slug (see list_workspaces). Defaults to 'default'.
+    """
+    return await get_sprint_sticker_state_tool(workspace, sticker_id, state_id, ctx)
 
 # Register MCP Resources
 @mcp.resource("yougile://api/overview")

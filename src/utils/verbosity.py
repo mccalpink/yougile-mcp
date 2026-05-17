@@ -449,7 +449,7 @@ def apply_verbosity(
             if k not in ("paging", "content"):
                 out[k] = v
         if all_omitted:
-            out["_meta"] = _make_meta(sorted(all_omitted))
+            out["_meta"] = _make_meta(verbosity, omitted=sorted(all_omitted))
         return out
 
     # Case 2: bare list of dicts
@@ -470,16 +470,32 @@ def apply_verbosity(
         compacted, omitted = compactor(data)
         if omitted:
             # _meta-first ordering: agents tend to scan top-of-object first.
-            return {"_meta": _make_meta(omitted), **compacted}
+            return {"_meta": _make_meta(verbosity, omitted=omitted), **compacted}
         return compacted
 
     # Anything else (None, scalar) — leave alone.
     return data
 
 
-def _make_meta(omitted: list[str]) -> dict:
-    return {
-        "verbosity": "compact",
-        "omitted_fields": omitted,
-        "hint": "Pass verbosity='full' to include all fields",
-    }
+def _make_meta(
+    verbosity: str,
+    omitted: "list[str] | None" = None,
+    unknown_includes: "list[str] | None" = None,
+    notes: "list[str] | None" = None,
+) -> dict:
+    """Строит _meta envelope по spec §1.7.
+
+    Поля присутствуют только если несут информацию:
+    - verbosity: всегда
+    - omitted_fields: только если список непустой
+    - unknown_includes: только если список непустой
+    - notes: только если список непустой (auto-heal из Phase III)
+    """
+    meta: dict = {"verbosity": verbosity}
+    if omitted:
+        meta["omitted_fields"] = omitted
+    if unknown_includes:
+        meta["unknown_includes"] = unknown_includes
+    if notes:
+        meta["notes"] = notes
+    return meta

@@ -28,13 +28,26 @@ async def list_task_summaries_tool(
 ) -> List[Dict[str, Any]]:
     """Get list of task summaries with pagination.
 
-    Args:
-        limit: Maximum number of tasks to return (default: 50)
-        offset: Number of tasks to skip (default: 0)
-        sticker_id: Server-side filter — only return tasks carrying this sticker.
-        sticker_state_id: Server-side filter — only return tasks whose sticker
-            value matches this state ID (typically combined with sticker_id).
-        verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
+    RETURNS:
+      compact (default): {id, title, columnId, assigned, deadline.deadline,
+        createdAt (ISO), completed, archived} + _hints per item:
+        has_description, has_checklists, has_stickers, has_stopwatch, has_timer.
+        _meta.omitted_fields lists what was dropped.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload, no changes.
+
+    include[] special keys for task:
+      "description"      — HTML description (heavy; omitted in list_* compact)
+      "checklists"       — nested checklist items
+      "stickers"         — sticker values map
+      "stopwatch"        — stopwatch state
+      "timer"            — timer state
+      "time_tracking"    — time tracking data
+      "deal"             — CRM deal (CRM workspaces only)
+      "extension_data"   — extensionData blob
+      "deadline_history" — deadline.history audit trail
+      "timestamps"       — raw ms timestamps (timestamp, completedTimestamp, archivedTimestamp)
+      "all"              — all opt-in fields above
     """
     try:
         if ctx:
@@ -90,6 +103,16 @@ async def list_tasks_tool(
         sticker_state_id: Server-side filter — only return tasks whose sticker
             value matches this state ID (typically combined with sticker_id).
         verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, columnId, assigned, deadline.deadline,
+        createdAt (ISO), completed, archived} + _hints per item.
+        _meta.omitted_fields lists what was dropped.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
+
+    include[] keys: description, checklists, stickers, stopwatch, timer,
+      time_tracking, deal, extension_data, deadline_history, timestamps, all.
     """
     try:
         if ctx:
@@ -315,6 +338,16 @@ async def get_task_tool(
     Args:
         task_id: Task UUID.
         verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, columnId, assigned, description,
+        deadline.deadline, createdAt (ISO), completed, archived}.
+        _meta.omitted_fields lists what was dropped.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
+
+    include[] keys: description, checklists, stickers, stopwatch, timer,
+      time_tracking, deal, extension_data, deadline_history, timestamps, all.
     """
     try:
         if ctx:
@@ -363,6 +396,15 @@ async def get_tasks_by_date_tool(
         completed_only: Only return completed tasks
         limit: Maximum number of tasks to fetch and filter (max 5000)
         verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payloads.
+
+    RETURNS:
+      compact (default): {id, title, columnId, assigned, deadline.deadline,
+        createdAt (ISO), completed, archived} + _hints per item.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
+
+    include[] keys: description, checklists, stickers, stopwatch, timer,
+      time_tracking, deal, extension_data, deadline_history, timestamps, all.
     """
     try:
         if ctx:

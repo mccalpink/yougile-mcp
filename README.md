@@ -139,11 +139,48 @@ YOUGILE_COMPANY_MAIN=00000000-0000-0000-0000-000000000000
     YOUGILE_KEY_TEAM=yyy
     YOUGILE_LABEL_TEAM="Стартап X"
 
-Каждый тул принимает параметр `workspace` (по умолчанию `"default"`).
+Каждый тул принимает опциональный параметр `workspace` (или используй
+`set_active_workspace` один раз в начале сессии).
 Используйте `list_workspaces` для получения доступных слагов.
 
 Устаревший формат `YOUGILE_API_KEY` (+ `YOUGILE_COMPANY_ID`) по-прежнему работает
 и маппится на слаг `default`.
+<!-- [/наша секция] -->
+
+<!-- [наша секция] -->
+## Активная компания (per-session)
+
+Чтобы не передавать `workspace` в каждый вызов тула, установи активную компанию
+один раз в начале сессии:
+
+```
+# MCP вызов
+set_active_workspace(slug="main")
+
+# Далее тулы без workspace используют "main"
+list_projects()       # → main
+list_tasks(...)       # → main
+create_task(...)      # → main
+```
+
+Для смены компании в рамках сессии — вызови снова:
+```
+set_active_workspace(slug="client_acme")
+```
+
+Для проверки текущего активного workspace:
+```
+get_active_workspace()
+# → {"active_workspace": "main", "effective_workspace": "main", "available_workspaces": [...]}
+```
+
+Явный `workspace="X"` в параметре тула всегда побеждает session active:
+```
+# session active = "main"
+list_projects(workspace="team")  # → team (явный override)
+```
+
+**Примечание:** Active workspace не персистентен — сбрасывается при перезапуске MCP сервера.
 <!-- [/наша секция] -->
 
 <!-- [наша секция] -->

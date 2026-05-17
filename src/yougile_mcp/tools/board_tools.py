@@ -21,6 +21,7 @@ async def list_boards_tool(
     offset: int = 0,
     include_deleted: bool = False,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -55,7 +56,7 @@ async def list_boards_tool(
             )
 
         await ctx.info(f"Successfully retrieved {len(result)} boards")
-        return apply_verbosity(result, dto_type="board", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="board", verbosity=verbosity, include=include, is_list=True)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -131,6 +132,7 @@ async def create_board_tool(
 async def get_board_tool(
     board_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -149,7 +151,7 @@ async def get_board_tool(
             result = await boards.get_board(client, board_id)
 
         await ctx.info(f"Successfully retrieved board: {result.get('title', board_id)}")
-        return apply_verbosity(result, dto_type="board", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="board", verbosity=verbosity, include=include)
 
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")

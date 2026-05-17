@@ -72,6 +72,14 @@ class TestSetActiveWorkspace:
 
 
 class TestGetActiveWorkspace:
+    def setup_method(self):
+        from src.core.session_state import _state
+        _state.clear()
+
+    def teardown_method(self):
+        from src.core.session_state import _state
+        _state.clear()
+
     @pytest.fixture(autouse=True)
     def patch_registry(self):
         with patch('src.server.registry') as mock_reg:

@@ -16,6 +16,7 @@ from ...utils.verbosity import apply_verbosity, Verbosity
 
 async def list_projects_tool(
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -32,7 +33,7 @@ async def list_projects_tool(
             result = await projects.get_projects(client)
 
         await ctx.info(f"Successfully retrieved {len(result)} projects")
-        return apply_verbosity(result, dto_type="project", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="project", verbosity=verbosity, include=include, is_list=True)
 
     except YouGileError as e:
         await ctx.error(f"API error while fetching projects: {e.message}")
@@ -95,6 +96,7 @@ async def create_project_tool(
 async def get_project_tool(
     project_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -114,7 +116,7 @@ async def get_project_tool(
             result = await projects.get_project(client, project_id)
 
         await ctx.info(f"Successfully retrieved project: {result.get('title', project_id)}")
-        return apply_verbosity(result, dto_type="project", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="project", verbosity=verbosity, include=include)
 
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")

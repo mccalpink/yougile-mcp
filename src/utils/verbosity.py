@@ -11,9 +11,21 @@ Whitelist / dropfields per DTO derived from the verbosity research:
 docs_work/may17/yougile/plan/research/response_verbosity.md §C.2
 """
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 Verbosity = Literal["custom", "compact", "full"]
+
+
+def iso_from_ms(ms: "int | None") -> "str | None":
+    """Конвертирует Unix timestamp в миллисекундах в ISO-8601 строку (UTC).
+
+    Returns:
+        '2026-05-17T12:00:00Z' или None если ms пустой/нулевой.
+    """
+    if not ms:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +41,14 @@ def _compact_task(task: dict) -> tuple[dict, list[str]]:
     """Drop noisy fields from a task dict. Returns (compacted, omitted_paths)."""
     out = dict(task)
     omitted: list[str] = []
+
+    # ISO timestamps — добавляем derived поля ДО удаления raw ms
+    if out.get("timestamp"):
+        out["createdAt"] = iso_from_ms(out["timestamp"])
+    if out.get("completedTimestamp"):
+        out["completedAt"] = iso_from_ms(out["completedTimestamp"])
+    if out.get("archivedTimestamp"):
+        out["archivedAt"] = iso_from_ms(out["archivedTimestamp"])
 
     # Always drop (if present at all)
     DROP_ALWAYS = (

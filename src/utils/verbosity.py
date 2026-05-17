@@ -202,33 +202,135 @@ _COMPACTORS = {
 
 
 # ---------------------------------------------------------------------------
+# Include[] resolution
+# ---------------------------------------------------------------------------
+
+# Словарь специальных opt-in ключей для include[]
+# Ключ → (поле или поля для добавления, вложенный путь если нужен)
+_INCLUDE_KEYS: dict = {
+    "deadline_history": {"field": "deadline", "nested": "history", "dto": "task"},
+    "description": {"field": "description", "dto": "task"},
+    "checklists": {"field": "checklists", "dto": "task"},
+    "extension_data": {"field": "extensionData", "dto": "task"},
+    "stickers": {"field": "stickers", "dto": "task"},
+    "deal": {"field": "deal", "dto": "task"},
+    "stopwatch": {"field": "stopwatch", "dto": "task"},
+    "timer": {"field": "timer", "dto": "task"},
+    "time_tracking": {"field": "timeTracking", "dto": "task"},
+    "permissions": {"field": "permissions", "dto": "project_role"},
+    "sprint_states": {"field": "states", "dto": "sticker"},
+    "string_states": {"field": "states", "dto": "sticker"},
+    "chat_maps": {"fields": ["userRoleMap", "roleConfigMap"], "dto": "group_chat"},
+    "crm_fields": {"fields": ["fields", "customFields"], "dto": "crm"},
+    "timestamps": {"fields": ["timestamp", "archivedTimestamp", "completedTimestamp"], "dto": "task"},
+}
+
+# Все зарегистрированные opt-in ключи (для include=["all"])
+_ALL_INCLUDE_KEYS: set = set(_INCLUDE_KEYS.keys())
+
+
+def apply_includes(obj: dict, source: dict, include: list, dto_type: str) -> tuple:
+    """Добавляет поля из include[] к уже отфильтрованному obj.
+
+    Args:
+        obj: уже отфильтрованный объект (после custom/compact strip).
+        source: оригинальный сырой объект (источник полей для include).
+        include: список include-ключей или имён полей.
+        dto_type: тип DTO для разрешения специальных ключей.
+
+    Returns:
+        (обновлённый obj, список неизвестных ключей)
+    """
+    unknown: list = []
+    effective_keys = _ALL_INCLUDE_KEYS if "all" in include else include
+
+    for key in effective_keys:
+        if key == "all":
+            continue
+
+        if key in _INCLUDE_KEYS:
+            spec = _INCLUDE_KEYS[key]
+            nested = spec.get("nested")
+            if nested:
+                # Вложенное поле: например deadline.history
+                parent_field = spec["field"]
+                if parent_field in source:
+                    parent_val = source[parent_field]
+                    if isinstance(parent_val, dict) and nested in parent_val:
+                        # Мержим в уже имеющийся parent или создаём
+                        existing = obj.get(parent_field, {})
+                        if not isinstance(existing, dict):
+                            existing = {}
+                        existing[nested] = parent_val[nested]
+                        obj[parent_field] = existing
+            elif "fields" in spec:
+                for field_name in spec["fields"]:
+                    if field_name in source:
+                        obj[field_name] = source[field_name]
+            else:
+                field_name = spec["field"]
+                if field_name in source:
+                    obj[field_name] = source[field_name]
+        elif key in source:
+            # Прямое имя поля (не спец. ключ) — добавляем напрямую
+            obj[key] = source[key]
+        else:
+            unknown.append(key)
+
+    return obj, unknown
+
+
+# ---------------------------------------------------------------------------
 # Custom mode helper
 # ---------------------------------------------------------------------------
 
 
 def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
-    """Custom mode: возвращает только id для каждого объекта.
+    """Custom mode: id + явно запрошенные поля через include[]."""
 
-    Параметр include обрабатывается в Task 1.2 (apply_includes).
-    Здесь — базовая реализация без include.
-    """
-    def _strip_to_id(obj: dict) -> dict:
-        if "id" in obj:
-            return {"id": obj["id"]}
-        return obj  # нет id — возвращаем как есть
+    def _strip_and_include(obj: dict) -> tuple:
+        base = {"id": obj["id"]} if "id" in obj else dict(obj)
+        unknown: list = []
+        if include:
+            base, unknown = apply_includes(base, obj, include, dto_type)
+        return base, unknown
 
     if isinstance(data, dict) and "paging" in data and "content" in data:
-        return {
-            "paging": data["paging"],
-            "content": [
-                _strip_to_id(item) if isinstance(item, dict) else item
-                for item in data["content"]
-            ],
-        }
+        compacted_content = []
+        all_unknown: set = set()
+        for item in data["content"]:
+            if isinstance(item, dict):
+                c, unknown = _strip_and_include(item)
+                compacted_content.append(c)
+                all_unknown.update(unknown)
+            else:
+                compacted_content.append(item)
+        out: dict = {"paging": data["paging"], "content": compacted_content}
+        meta: dict = {"verbosity": "custom"}
+        if all_unknown:
+            meta["unknown_includes"] = sorted(all_unknown)
+        out["_meta"] = meta
+        return out
+
     if isinstance(data, list):
-        return [_strip_to_id(item) if isinstance(item, dict) else item for item in data]
+        all_unknown_list: set = set()
+        result = []
+        for item in data:
+            if isinstance(item, dict):
+                c, unknown = _strip_and_include(item)
+                result.append(c)
+                all_unknown_list.update(unknown)
+            else:
+                result.append(item)
+        return result
+
     if isinstance(data, dict):
-        return _strip_to_id(data)
+        c, unknown = _strip_and_include(data)
+        if unknown:
+            meta: dict = {"verbosity": "custom", "unknown_includes": sorted(unknown)}
+            return {"_meta": meta, **c}
+        return c
+
     return data
 
 

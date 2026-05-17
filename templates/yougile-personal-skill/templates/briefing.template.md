@@ -20,20 +20,24 @@
 
 **Default workspace:** `main`
 
+**default_workspace:** `main`
+<!-- FILL: slug из таблицы Workspaces выше. Агент вызовет set_active_workspace(default_workspace)
+     при старте сессии. Все тулы без явного workspace используют этот slug. -->
+
 ---
 
-## 🔴 Routing rules (КРИТИЧНО)
+## 🔴 Routing rules (переключение компании)
 
-<!-- FILL: без этой секции агент будет переспрашивать workspace на каждый запрос.
-     Формат: конкретные слова/фразы → slug. НЕ общие описания — конкретные паттерны.
-     Примеры ниже — отредактируй под себя. -->
+<!-- FILL: описывают КОГДА нужно переключать активный workspace
+     (вызывать set_active_workspace), а не когда передавать workspace в тул. -->
 
-- **Default:** `main` — если явно не указано другое
-- **"клиент ACME", "для ACME", "по ACME"** → `client_acme`
-- **"в команде", "команда", "team", "рабочее"** → `team`
-- **"лично", "себе", "личный проект", "мои задачи"** → `main`
-- **Explicit slug в сообщении** ("в main", "workspace team") → используй этот slug
-- **Ambiguous** → используй `main`, скажи какой workspace выбрал
+- **Explicit slug в сообщении** ("в main", "workspace team") →
+  `set_active_workspace("team")`, затем продолжай работу
+- **"клиент ACME", "для ACME", "по ACME"** →
+  `set_active_workspace("client_acme")` если такой workspace есть
+- **"в команде", "команда", "team", "рабочее"** → `set_active_workspace("team")`
+- **"лично", "себе", "личный проект", "мои задачи"** → `set_active_workspace("main")`
+- **Ambiguous** → используй default_workspace, скажи какой выбрал
 
 ---
 

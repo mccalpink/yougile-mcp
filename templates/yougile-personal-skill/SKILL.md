@@ -17,12 +17,20 @@ description: >
 вызовов), и какие паттерны предпочитает пользователь.
 
 Инструменты MCP: `yougile_*` (например, `yougile_list_projects`, `yougile_create_task`).
-Каждый тул принимает `workspace` — slug из таблицы ниже. Передавай явно, даже если
-воркспейс один.
+Каждый тул принимает опциональный `workspace`. По умолчанию тул использует активный
+workspace сессии (установленный через `set_active_workspace`). Передавай `workspace`
+явно только когда пользователь явно просит работать с другой компанией.
 
 ---
 
 ## Алгоритм при активации (выполнять по порядку)
+
+0. **Установи активный workspace.**
+   Прочитай `briefing.md` (шаг 1). Из него возьми `default_workspace`.
+   Вызови `set_active_workspace(slug=default_workspace)`.
+   Если briefing.md не существует — спроси: «Какая компания по умолчанию?»
+   Используй ответ в `set_active_workspace`.
+   После установки — все последующие тулы не требуют явного `workspace`.
 
 1. **Прочитай `briefing.md`** — путь: `~/.agents/skills/yougile-personal/briefing.md`
    (или `$YOUGILE_USER_MEMORY_DIR/briefing.md` если переменная задана).
@@ -55,6 +63,9 @@ description: >
 | `{{SLUG_2}}` | {{LABEL_2}} | {{ROLE_2}} | false | false | |
 
 **Default workspace:** `{{DEFAULT_SLUG}}`
+
+Активный workspace на сессию: вызови `get_active_workspace()` чтобы узнать текущий,
+`set_active_workspace(slug)` чтобы установить.
 
 ---
 
@@ -149,7 +160,8 @@ YouGile stickers — кастомные поля компании. Устано�
 4. **Миллисекунды для timestamp.** `deadline.deadline`, sticker timestamps — всегда ms.
    SprintStickerState.begin/end — исключение: API хранит **секунды** (quirk, см. quirks.md).
 
-5. **Workspace передавай явно.** Даже если один workspace — пиши `workspace="slug"`.
+5. **Workspace.** Установи активный workspace через `set_active_workspace` в начале сессии.
+   Передавай `workspace` явно только при явном override (пользователь просит другую компанию).
 
 6. **Confirm destination при создании.** При создании задачи скажи:
    «Помещу в {{column}} на доске {{board}} проекта {{project}} ({{workspace}}).»
@@ -200,6 +212,8 @@ YouGile stickers — кастомные поля компании. Устано�
 8. Вызывать `decode_task_stickers` для задач с > 3 стикерами без кэша — N+1 проблема.
 9. Предлагать CRM-операции в workspace с `crm_enabled=false`.
 10. Молча повторять запрос на 429 — rate limit 50 req/min, сообщи пользователю.
+11. ❌ Передавать `workspace="main"` в каждом вызове тула — лишний токен. Установи
+    активный workspace один раз через `set_active_workspace`.
 
 ---
 

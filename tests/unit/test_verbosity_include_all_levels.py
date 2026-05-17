@@ -127,3 +127,46 @@ def test_meta_no_for_full():
     result = apply_verbosity(raw, "task", verbosity="full")
     # full без include — pass-through, _meta опционален
     # (не assert'им — допустимо и True и False; вопрос дизайна)
+
+
+# ---------------------------------------------------------------------------
+# Blocker B: unknown_includes для full+paging
+# ---------------------------------------------------------------------------
+
+def test_full_paging_unknown_include_in_meta():
+    """include=['foo'] для full+paging → _meta.unknown_includes: ['foo']."""
+    raw = {
+        "paging": {"totalCount": 1, "offset": 0, "limit": 20},
+        "content": [{"id": "uuid", "title": "x", "description": "html"}]
+    }
+    result = apply_verbosity(raw, "task", verbosity="full", include=["foo_unknown"], is_list=True)
+    assert "_meta" in result
+    assert "unknown_includes" in result["_meta"]
+    assert "foo_unknown" in result["_meta"]["unknown_includes"]
+
+
+def test_full_bare_list_unknown_include_no_crash():
+    """include=['foo'] для full+bare list — не падает, структура list сохранена."""
+    raw = [
+        {"id": "uuid1", "title": "x"},
+        {"id": "uuid2", "title": "y"}
+    ]
+    # Bare list не имеет top-level meta slot — pass-through без ошибок
+    result = apply_verbosity(raw, "task", verbosity="full", include=["foo_unknown"], is_list=True)
+    assert isinstance(result, list)
+
+
+def test_full_paging_known_include_no_unknown_meta():
+    """include=['deadline_history'] для full+paging → история есть, нет unknown_includes."""
+    raw = {
+        "paging": {"totalCount": 1, "offset": 0, "limit": 20},
+        "content": [{
+            "id": "uuid", "title": "x",
+            "deadline": {"deadline": 1748217600000, "history": ["edit"]}
+        }]
+    }
+    result = apply_verbosity(raw, "task", verbosity="full", include=["deadline_history"], is_list=True)
+    assert "history" in result["content"][0].get("deadline", {})
+    # Если _meta есть — unknown_includes должен быть пустым
+    meta = result.get("_meta", {})
+    assert not meta.get("unknown_includes"), f"unknown_includes must be empty for known key: {meta}"

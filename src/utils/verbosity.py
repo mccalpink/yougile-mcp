@@ -435,9 +435,27 @@ def apply_verbosity(
     """
     if verbosity == "full":
         # full = pass-through, но include[] всё равно применяем если задан
-        if include and isinstance(data, dict) and dto_type in _COMPACTORS:
-            obj, unknown = apply_includes(dict(data), data, include, dto_type)
-            return obj
+        if include and dto_type in _COMPACTORS:
+            # Paging envelope: применяем include к каждому item, собираем unknown в _meta
+            if isinstance(data, dict) and "paging" in data and "content" in data:
+                all_unknown: set[str] = set()
+                new_content = []
+                for item in data["content"]:
+                    if isinstance(item, dict):
+                        item_out, unknown = apply_includes(dict(item), item, include, dto_type)
+                        all_unknown.update(unknown)
+                        new_content.append(item_out)
+                    else:
+                        new_content.append(item)
+                out = dict(data)
+                out["content"] = new_content
+                if all_unknown:
+                    out["_meta"] = _make_meta("full", unknown_includes=sorted(all_unknown))
+                return out
+            # Single dict: применяем include, возвращаем без _meta (full pass-through)
+            if isinstance(data, dict):
+                obj, _unknown = apply_includes(dict(data), data, include, dto_type)
+                return obj
         return data
 
     if dto_type not in _COMPACTORS:

@@ -76,7 +76,7 @@ def test_meta_notes_on_webhook_filter_correction(api_key, test_workspace_slug):
     from src.utils.normalizers import normalize_webhook_filters
 
     array_filter = [{"name": ["location"], "value": ["task-created"]}]
-    result, meta = normalize_webhook_filters(array_filter, return_meta=True)
+    result, meta = normalize_webhook_filters(array_filter)
 
     # Результат исправлен
     assert result[0]["name"] == "location"

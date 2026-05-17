@@ -159,7 +159,7 @@ async def create_webhook_tool(
         # Quirk: WebhookFilters.name описан как array в OpenAPI, фактически — строка.
         # Нормализуем до отправки в API.
         if filters:
-            filters, filter_meta = normalize_webhook_filters(filters, return_meta=True)
+            filters, filter_meta = normalize_webhook_filters(filters)
             # filter_meta.notes попадут в ответ если нужно
 
         payload: Dict[str, Any] = {
@@ -221,7 +221,7 @@ async def update_webhook_tool(
             filters = _validate_filters(filters)
             # Quirk: WebhookFilters.name описан как array в OpenAPI, фактически — строка.
             if filters:
-                filters, _ = normalize_webhook_filters(filters, return_meta=True)
+                filters, _ = normalize_webhook_filters(filters)
             payload["filters"] = filters
         if disabled is not None:
             payload["disabled"] = bool(disabled)

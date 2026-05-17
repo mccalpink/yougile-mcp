@@ -14,7 +14,7 @@ def test_webhook_filters_string_accepted(api_key, test_workspace_slug):
 
     # normalize_webhook_filters принимает list[dict]
     valid_filters = [{"name": "location", "value": ["task-created"]}]
-    result, meta = normalize_webhook_filters(valid_filters, return_meta=True)
+    result, meta = normalize_webhook_filters(valid_filters)
 
     assert result[0]["name"] == "location"
     # Нет лишних notes (строка — правильный формат, нормализация не нужна)
@@ -27,7 +27,7 @@ def test_webhook_filters_array_single_corrected(api_key, test_workspace_slug):
     from src.utils.normalizers import normalize_webhook_filters
 
     array_filters = [{"name": ["location"], "value": ["task-created"]}]
-    result, meta = normalize_webhook_filters(array_filters, return_meta=True)
+    result, meta = normalize_webhook_filters(array_filters)
 
     # Normalizer берёт первый элемент массива
     assert result[0]["name"] == "location", \

@@ -71,8 +71,7 @@ def normalize_sprint_sticker_state(state: dict, direction: str) -> dict:
 
 def normalize_webhook_filters(
     filters: list,
-    return_meta: bool = False,
-) -> list | tuple:
+) -> tuple[list, dict]:
     """
     Нормализует WebhookFilters.name — исправляет ошибку кодогенерации OpenAPI.
 
@@ -81,10 +80,10 @@ def normalize_webhook_filters(
 
     Args:
         filters: Список объектов WebhookFilter.
-        return_meta: Если True — возвращает (filters, meta_dict) вместо просто filters.
 
     Returns:
-        Нормализованный список фильтров. При return_meta=True — кортеж (list, dict).
+        Кортеж (нормализованный список фильтров, meta_dict).
+        meta_dict содержит ключ "notes" если была произведена автокоррекция.
 
     Raises:
         ValidationError: Если name — массив из более чем одного элемента.
@@ -112,11 +111,8 @@ def normalize_webhook_filters(
             # len == 0: оставляем как есть, пусть API вернёт ошибку
         result.append(item)
 
-    if return_meta:
-        meta = {"notes": notes} if notes else {}
-        return result, meta
-
-    return result
+    meta = {"notes": notes} if notes else {}
+    return result, meta
 
 
 # ---------------------------------------------------------------------------

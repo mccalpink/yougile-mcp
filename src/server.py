@@ -449,7 +449,7 @@ async def describe_response(
             ),
         ),
     ] = "compact",
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Return the response schema for a YouGile entity type.
@@ -465,6 +465,7 @@ async def describe_response(
 
     RELATED: All list_* and get_* tools accept verbosity and include[] parameters.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await describe_response_impl(entity=entity, verbosity=verbosity)
 
 
@@ -481,7 +482,7 @@ async def setup_yougile_skill(
             examples=["~/.agents/skills/yougile-personal", "/custom/path"],
         ),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Guide interactive setup of the yougile-personal SKILL.
@@ -495,6 +496,7 @@ async def setup_yougile_skill(
 
     RELATED: Resource yougile://skill-template — shows the SKILL.md template structure.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await setup_yougile_skill_impl(memory_dir=memory_dir)
 
 
@@ -517,7 +519,7 @@ async def list_users(
     offset: Annotated[int, Field(description="Page offset.")] = 0,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List users in the workspace company, optionally filtered.
@@ -531,6 +533,7 @@ async def list_users(
     users are never returned here. Does NOT include department membership
     or custom fields — call get_user for the full profile.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_users_tool(
         email=email,
         project_id=project_id,
@@ -554,7 +557,7 @@ async def invite_user(
             ),
         ),
     ] = False,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Invite a user to the workspace company by email.
@@ -567,6 +570,7 @@ async def invite_user(
     SIDE EFFECT: YouGile sends an email invitation; consumes a license seat.
     RETURNS: {id} of the created user record.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await invite_user_tool(email=email, is_admin=is_admin, workspace=workspace, ctx=ctx)
 
 
@@ -575,7 +579,7 @@ async def get_user(
     user_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get profile of one user.
@@ -584,6 +588,7 @@ async def get_user(
     RETURNS (compact, default): {id, email, realName}. Use verbosity="full"
     to additionally include isAdmin, status, lastActivity (raw UserDto).
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_user_tool(
         user_id=user_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -601,7 +606,7 @@ async def update_user(
             ),
         ),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update a user's admin status.
@@ -611,13 +616,14 @@ async def update_user(
     edit those in the YouGile web UI.
     USE WHEN: promoting/demoting between company admin and regular user.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_user_tool(user_id=user_id, is_admin=is_admin, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_DELETE)
 async def remove_user(
     user_id: UUIDParam,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Remove a user from the workspace company.
@@ -626,6 +632,7 @@ async def remove_user(
     dangling user_id reference. Frees a license seat.
     USE WHEN: offboarding. Always confirm with the human first.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await remove_user_tool(user_id=user_id, workspace=workspace, ctx=ctx)
 
 
@@ -633,7 +640,7 @@ async def remove_user(
 async def get_me(
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Return the user account that owns this workspace's API key.
@@ -643,6 +650,7 @@ async def get_me(
     RETURNS (compact, default): {id, email, realName}. Use verbosity="full"
     for isAdmin/status/lastActivity.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_me_tool(verbosity=verbosity, include=include, workspace=workspace, ctx=ctx)
 
 
@@ -655,7 +663,7 @@ async def get_me(
 async def list_projects(
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List all projects in the workspace.
@@ -667,6 +675,7 @@ async def list_projects(
     (~2.5x larger). Full mode is required when you need to check who can
     access a project before assigning a task.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_projects_tool(verbosity=verbosity, include=include, workspace=workspace, ctx=ctx)
 
 
@@ -682,7 +691,7 @@ async def create_project(
             ),
         ),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a new project.
@@ -693,6 +702,7 @@ async def create_project(
     RETURNS: {id} only — call get_project(project_id) for full details.
     RELATED: create_board to add boards after creation.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_project_tool(
         title=title, users=users, workspace=workspace, ctx=ctx,
     )
@@ -703,7 +713,7 @@ async def get_project(
     project_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one project's details.
@@ -711,6 +721,7 @@ async def get_project(
     RETURNS (compact, default): {id, title}. Use verbosity="full" to also
     include timestamp and the users-role map (needed for permission checks).
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_project_tool(
         project_id=project_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -733,7 +744,7 @@ async def update_project(
         Optional[bool],
         Field(description="True = soft-delete the project; False = restore."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update project title, users, or soft-delete state.
@@ -743,6 +754,7 @@ async def update_project(
     NOTE: `users` is a full replacement; preserve existing members by
     merging with get_project output.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_project_tool(
         project_id=project_id, title=title, users=users, deleted=deleted,
         workspace=workspace, ctx=ctx,
@@ -769,7 +781,7 @@ async def list_boards(
     include_deleted: Annotated[bool, Field(description="Include soft-deleted boards.")] = False,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List boards, optionally filtered by project or title.
@@ -777,6 +789,7 @@ async def list_boards(
     RETURNS (compact, default): {id, title, projectId, stickers} per board
     (default deleted=false flag stripped). Use verbosity="full" for raw API.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_boards_tool(
         project_id=project_id, title=title, limit=limit, offset=offset,
         include_deleted=include_deleted, verbosity=verbosity, include=include,
@@ -800,7 +813,7 @@ async def create_board(
             ),
         ),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a board inside a project.
@@ -810,6 +823,7 @@ async def create_board(
     RETURNS: {id} only — call get_board afterwards for full details.
     RELATED: create_column to add columns; create_task to populate them.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_board_tool(
         title=title, project_id=project_id,
         stickers=stickers, workspace=workspace, ctx=ctx,
@@ -821,7 +835,7 @@ async def get_board(
     board_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one board's configuration.
@@ -829,6 +843,7 @@ async def get_board(
     RETURNS (compact, default): {id, title, projectId, stickers} (default
     deleted flag stripped). Use verbosity="full" for raw API.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_board_tool(
         board_id=board_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -850,7 +865,7 @@ async def update_board(
         Optional[bool],
         Field(description="True = soft-delete; False = restore previously-deleted board."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update a board's title, parent project, sticker visibility, or soft-delete state.
@@ -859,6 +874,7 @@ async def update_board(
     `stickers`, and `deleted`. There is no workflow field.
     NOTE: only the fields you pass are touched.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_board_tool(
         board_id=board_id, title=title, project_id=project_id,
         stickers=stickers, deleted=deleted, workspace=workspace, ctx=ctx,
@@ -878,7 +894,7 @@ async def list_columns(
     ] = None,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List columns, optionally scoped to a board.
@@ -889,6 +905,7 @@ async def list_columns(
     identical here. The verbosity arg is exposed only for consistency
     with other list_* / get_* tools.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_columns_tool(
         board_id=board_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -909,13 +926,14 @@ async def create_column(
             le=16,
         ),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a column inside a board.
 
     RETURNS: {id} only.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_column_tool(
         title=title, board_id=board_id, color=color, workspace=workspace, ctx=ctx,
     )
@@ -926,7 +944,7 @@ async def get_column(
     column_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one column's details.
@@ -934,6 +952,7 @@ async def get_column(
     NOTE: ColumnDto is already minimal; verbosity rarely changes the
     output. Kept for consistency.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_column_tool(
         column_id=column_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -955,10 +974,11 @@ async def update_column(
         Optional[bool],
         Field(description="True = soft-delete; False = restore."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update a column's title, color, parent board, or soft-delete state."""
+    workspace = _resolve_ws(workspace, ctx)
     return await update_column_tool(
         column_id=column_id, title=title, color=color,
         board_id=board_id, deleted=deleted,
@@ -995,7 +1015,7 @@ async def list_task_summaries(
     ] = None,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List minimal task summaries (id + title) with pagination.
@@ -1006,6 +1026,7 @@ async def list_task_summaries(
     Use verbosity="full" to see audit history, exact timestamps, or creator.
     RELATED: list_tasks for the full task body.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_task_summaries_tool(
         limit=limit, offset=offset,
         sticker_id=sticker_id, sticker_state_id=sticker_state_id,
@@ -1054,7 +1075,7 @@ async def list_tasks(
     ] = None,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List full task records with optional filters.
@@ -1070,6 +1091,7 @@ async def list_tasks(
     creation date — those must be applied client-side after fetching.
     For date filtering, prefer get_tasks_by_date.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_tasks_tool(
         column_id=column_id, assigned_to=assigned_to, title=title,
         limit=limit, offset=offset, include_deleted=include_deleted,
@@ -1178,7 +1200,7 @@ async def create_task(
         Optional[Dict[str, Any]],
         Field(description="Free-form data used by YouGile extensions."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a task.
@@ -1188,6 +1210,7 @@ async def create_task(
     assignees, list_string_stickers + get_string_sticker for sticker IDs.
     RETURNS: {id} only — call get_task for the full payload.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_task_tool(
         title=title,
         column_id=column_id,
@@ -1217,7 +1240,7 @@ async def get_task(
     task_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one task's payload (title, description, assigned, stickers, etc.).
@@ -1229,6 +1252,7 @@ async def get_task(
     Use verbosity="full" to access audit history, the original creator,
     or extension data (raw TaskDto).
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_task_tool(
         task_id=task_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -1257,7 +1281,7 @@ async def get_tasks_by_date(
     limit: Annotated[int, Field(description="Max tasks fetched before client-side filtering.")] = 5000,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List tasks filtered by date and optional assignee / creator.
@@ -1271,6 +1295,7 @@ async def get_tasks_by_date(
       get_tasks_by_date(target_date="2026-01-15", completed_only=True).
       get_tasks_by_date(created_by="<uid>") — slow client-side filter.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_tasks_by_date_tool(
         assigned_to=assigned_to, created_by=created_by, target_date=target_date,
         completed_only=completed_only, limit=limit, verbosity=verbosity, include=include,
@@ -1347,7 +1372,7 @@ async def update_task(
     id_task_common: Annotated[Optional[str], Field(description="Cross-company human ID.")] = None,
     id_task_project: Annotated[Optional[str], Field(description="Per-project human ID.")] = None,
     extension_data: Annotated[Optional[Dict[str, Any]], Field(description="Extension data.")] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update a task. Only passed fields are touched.
@@ -1359,6 +1384,7 @@ async def update_task(
     RELATED: delete_task is a shortcut for update_task(deleted=True);
     set_task_deadline is a safer helper for deadlines.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_task_tool(
         task_id=task_id,
         title=title,
@@ -1388,7 +1414,7 @@ async def update_task(
 @mcp.tool(annotations=ANN_DELETE)
 async def delete_task(
     task_id: UUIDParam,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Soft-delete a task (equivalent to update_task(deleted=True)).
@@ -1398,6 +1424,7 @@ async def delete_task(
     REVERSIBLE: update_task(task_id, deleted=False) restores. Deleted tasks
     are hidden from list_tasks unless include_deleted=true is passed.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_task_tool(task_id=task_id, deleted=True, workspace=workspace, ctx=ctx)
 
 
@@ -1419,7 +1446,7 @@ async def set_task_deadline(
         Field(description="Optional start date as Unix ms. Seconds auto-promoted."),
     ] = None,
     with_time: Annotated[bool, Field(description="Show time alongside date in the UI.")] = True,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Set or replace a task deadline sticker (safe wrapper).
@@ -1429,6 +1456,7 @@ async def set_task_deadline(
     fields that the YouGile API rejects when missing.
     RELATED: remove_task_sticker(sticker_type='deadline') to clear.
     """
+    workspace = _resolve_ws(workspace, ctx)
     if deadline_timestamp < 10000000000:  # seconds → ms
         deadline_timestamp *= 1000
         if ctx:
@@ -1466,7 +1494,7 @@ async def remove_task_sticker(
             examples=["deadline", "timeTracking", "086866d2-a230-4a4a-8225-e3a9d847b6d0"],
         ),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Detach a sticker from a task.
@@ -1475,6 +1503,7 @@ async def remove_task_sticker(
     DESTRUCTIVE: removes the field from the task. To set a new value
     instead, use update_task(stickers=...) or set_task_deadline.
     """
+    workspace = _resolve_ws(workspace, ctx)
     if sticker_type == "deadline":
         return await update_task_tool(
             task_id=task_id, deadline={"deleted": True}, workspace=workspace, ctx=ctx,
@@ -1492,10 +1521,11 @@ async def remove_task_sticker(
 @mcp.tool(annotations=ANN_READ)
 async def get_task_chat_subscribers(
     task_id: UUIDParam,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List user UUIDs subscribed to a task's chat (receive notifications)."""
+    workspace = _resolve_ws(workspace, ctx)
     return await get_task_chat_subscribers_tool(task_id=task_id, workspace=workspace, ctx=ctx)
 
 
@@ -1506,7 +1536,7 @@ async def update_task_chat_subscribers(
         List[str],
         Field(description="REPLACEMENT list of user UUIDs (full replacement, not append)."),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Replace a task's chat subscriber list.
@@ -1514,6 +1544,7 @@ async def update_task_chat_subscribers(
     NOTE: this is a full replacement. To add a user, read
     get_task_chat_subscribers first and append.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_task_chat_subscribers_tool(
         task_id=task_id, subscribers=subscribers, workspace=workspace, ctx=ctx,
     )
@@ -1531,7 +1562,7 @@ async def list_string_stickers(
     include_deleted: Annotated[bool, Field(description="Include soft-deleted stickers.")] = False,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List custom string stickers defined in the company.
@@ -1541,6 +1572,7 @@ async def list_string_stickers(
     RETURNS (compact, default): list of {id, name, icon, states} per sticker
     with default deleted flag stripped. Use verbosity="full" for raw API.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_string_stickers_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
         verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
@@ -1552,7 +1584,7 @@ async def get_string_sticker(
     sticker_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one string sticker including all its states.
@@ -1561,6 +1593,7 @@ async def get_string_sticker(
     state_ids — for example to set a 'Priority: High' value on a task.
     Compact (default) strips the default deleted flag.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_string_sticker_tool(
         sticker_id=sticker_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -1570,10 +1603,11 @@ async def get_string_sticker(
 async def get_string_sticker_state(
     sticker_id: UUIDParam,
     state_id: UUIDParam,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one state of a string sticker (name, colour, icon)."""
+    workspace = _resolve_ws(workspace, ctx)
     return await get_string_sticker_state_tool(
         sticker_id=sticker_id, state_id=state_id, workspace=workspace, ctx=ctx,
     )
@@ -1583,10 +1617,11 @@ async def get_string_sticker_state(
 async def get_sprint_sticker_state(
     sticker_id: UUIDParam,
     state_id: UUIDParam,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one state of a sprint sticker (sprint interval)."""
+    workspace = _resolve_ws(workspace, ctx)
     return await get_sprint_sticker_state_tool(
         sticker_id=sticker_id, state_id=state_id, workspace=workspace, ctx=ctx,
     )
@@ -1598,7 +1633,7 @@ async def decode_task_stickers(
         Dict[str, str],
         Field(description="{sticker_id: state_id} as found on a task.stickers field."),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Resolve a {sticker_id: state_id} map to human-readable labels.
@@ -1608,6 +1643,7 @@ async def decode_task_stickers(
     per company; for tasks with >5 stickers prefer caching the output of
     list_string_stickers and resolving labels client-side.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await decode_task_stickers_tool(
         stickers_dict=stickers_dict, workspace=workspace, ctx=ctx,
     )
@@ -1622,7 +1658,7 @@ async def decode_task_stickers(
 async def list_group_chats(
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List standalone group chats (not bound to tasks).
@@ -1630,6 +1666,7 @@ async def list_group_chats(
     Compact (default) drops the bulky userRoleMap/roleConfigMap blocks —
     use verbosity="full" if you need permission/role configuration.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_group_chats_tool(
         verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -1655,7 +1692,7 @@ async def create_group_chat(
             ),
         ),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a group chat.
@@ -1664,6 +1701,7 @@ async def create_group_chat(
     together. Passing only title is likely to return 400.
     RETURNS: {id} of the chat.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_group_chat_tool(
         title=title, users=users, user_role_map=user_role_map,
         role_config_map=role_config_map, workspace=workspace, ctx=ctx,
@@ -1675,7 +1713,7 @@ async def get_group_chat(
     chat_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one group chat's details.
@@ -1683,6 +1721,7 @@ async def get_group_chat(
     Compact (default) drops userRoleMap/roleConfigMap. Use verbosity="full"
     for permission/role configuration.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_group_chat_tool(
         chat_id=chat_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
@@ -1702,7 +1741,7 @@ async def get_chat_messages(
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List messages in a chat or task comment thread.
@@ -1713,6 +1752,7 @@ async def get_chat_messages(
     verbosity="full" if you need the HTML body or edit timestamps.
     RELATED: get_task_comments is an alias for tasks.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_chat_messages_tool(
         chat_id=chat_id, limit=limit, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
@@ -1742,7 +1782,7 @@ async def send_chat_message(
         Optional[str],
         Field(description="Short label / quick-link text. Defaults to 'Comment'."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Post a message to a chat or task comment thread.
@@ -1750,6 +1790,7 @@ async def send_chat_message(
     USE WHEN: commenting on a task or messaging a group chat.
     RELATED: add_task_comment is an alias for tasks.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await send_chat_message_tool(
         chat_id=chat_id, text=text, text_html=text_html, label=label,
         workspace=workspace, ctx=ctx,
@@ -1762,7 +1803,7 @@ async def get_chat_message(
     message_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Get one chat message by ID.
@@ -1770,6 +1811,7 @@ async def get_chat_message(
     Compact (default) drops textHtml/editTimestamp/empty reactions.
     Use verbosity="full" for raw API payload.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await get_chat_message_tool(
         chat_id=chat_id, message_id=message_id, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
@@ -1786,7 +1828,7 @@ async def update_chat_message(
         Field(description="Admin reaction emoji (enum of 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔)."),
     ] = None,
     delete: Annotated[bool, Field(description="True = soft-delete the message.")] = False,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update message metadata: label, admin reaction, or soft-delete.
@@ -1794,6 +1836,7 @@ async def update_chat_message(
     NOTE: the YouGile API does NOT support editing message text — only
     metadata. UpdateChatMessageDto exposes only deleted/label/react.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await update_chat_message_tool(
         chat_id=chat_id, message_id=message_id, label=label, react=react,
         delete=delete, workspace=workspace, ctx=ctx,
@@ -1806,10 +1849,11 @@ async def get_task_comments(
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List comments on a task (alias for get_chat_messages(chat_id=task_id))."""
+    workspace = _resolve_ws(workspace, ctx)
     return await get_task_comments_tool(
         task_id=task_id, limit=limit, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
@@ -1828,10 +1872,11 @@ async def add_task_comment(
             ),
         ),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Post a comment on a task (alias for send_chat_message(chat_id=task_id))."""
+    workspace = _resolve_ws(workspace, ctx)
     return await add_task_comment_tool(
         task_id=task_id, comment=comment, workspace=workspace, ctx=ctx,
     )
@@ -1849,7 +1894,7 @@ async def list_webhooks(
     include_deleted: Annotated[bool, Field(description="Include soft-deleted webhooks.")] = False,
     verbosity: VerbosityParam = "compact",
     include: IncludeParam = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> list:
     """List webhook subscriptions for the workspace.
@@ -1859,6 +1904,7 @@ async def list_webhooks(
     Compact (default) drops lastSuccess/failuresSinceLastSuccess; use
     verbosity="full" when debugging delivery failures.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await list_webhooks_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
         verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
@@ -1897,7 +1943,7 @@ async def create_webhook(
             ),
         ),
     ] = False,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a webhook subscription.
@@ -1907,6 +1953,7 @@ async def create_webhook(
 
     If you really do want a firehose, set `allow_unfiltered=True` explicitly.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_webhook_tool(
         url=url, event=event, filters=filters or [],
         allow_unfiltered=allow_unfiltered, workspace=workspace, ctx=ctx,
@@ -1921,10 +1968,11 @@ async def update_webhook(
     filters: Annotated[Optional[List[Dict[str, Any]]], Field(description="Replacement filter list.")] = None,
     disabled: Annotated[Optional[bool], Field(description="True = pause deliveries without deleting.")] = None,
     deleted: Annotated[bool, Field(description="True = soft-delete the subscription.")] = False,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Update or soft-delete a webhook subscription."""
+    workspace = _resolve_ws(workspace, ctx)
     return await update_webhook_tool(
         webhook_id=webhook_id, url=url, event=event, filters=filters,
         deleted=deleted, disabled=disabled, workspace=workspace, ctx=ctx,
@@ -1946,7 +1994,7 @@ async def upload_file(
         Optional[str],
         Field(description="Optional override for the reported filename."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Upload a file from the server's filesystem to YouGile storage.
@@ -1955,6 +2003,7 @@ async def upload_file(
     comment. Embed the returned URL via <a href="..."> in the HTML body.
     RETURNS: {result, url, fullUrl}.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await upload_file_tool(
         path=path, filename=filename, workspace=workspace, ctx=ctx,
     )
@@ -1978,13 +2027,14 @@ async def create_crm_contact(
         Optional[Dict[str, Any]],
         Field(description="Additional custom fields merged last (overrides on key conflict)."),
     ] = None,
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Create a CRM contact person inside a CRM project.
 
     USE WHEN: registering a new contact before creating a deal task.
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await create_crm_contact_tool(
         project_id=project_id, title=title, position=position, phone=phone,
         email=email, additional_phone=additional_phone, address=address,
@@ -2002,7 +2052,7 @@ async def find_crm_contact_by_external_id(
         str,
         Field(description="Provider-side chat / contact identifier."),
     ],
-    workspace: WorkspaceParam = "default",
+    workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
     """Look up a CRM contact by an external messenger ID.
@@ -2011,6 +2061,7 @@ async def find_crm_contact_by_external_id(
     deal, before deciding whether to create_crm_contact.
     RETURNS: contact dict, or None if no match (YouGile 404 → None).
     """
+    workspace = _resolve_ws(workspace, ctx)
     return await find_crm_contact_by_external_id_tool(
         provider=provider, chat_id=chat_id, workspace=workspace, ctx=ctx,
     )

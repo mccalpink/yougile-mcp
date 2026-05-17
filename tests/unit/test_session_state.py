@@ -2,6 +2,7 @@ import threading
 import pytest
 from unittest.mock import MagicMock
 from src.core.session_state import get_active, set_active, clear_active, resolve_workspace
+from src.core.session_state import _state  # для teardown очистки
 from src.core.exceptions import WorkspaceNotConfiguredError
 
 
@@ -77,6 +78,11 @@ class FakeRegistry:
 class TestResolveWorkspace:
     def setup_method(self):
         self.registry = FakeRegistry(["default", "main", "team"])
+        # Очистка глобального состояния перед каждым тестом
+        _state.clear()
+
+    def teardown_method(self):
+        _state.clear()
 
     def test_explicit_wins_over_session(self):
         set_active(200, "main")

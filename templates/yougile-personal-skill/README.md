@@ -1,70 +1,105 @@
-# yougile-personal — Claude skill template
+# yougile-personal — SKILL Template
 
-This is a starting point for a personal Claude skill that loads YouGile context
-into the assistant — workspace slugs, project/board/column UUIDs, sticker maps,
-routing rules, your own user IDs. It's the counterpart to the `yougile-mcp`
-server: the MCP exposes generic tools, the skill tells the model what
-*your* setup looks like so it doesn't have to discover everything per session.
+Шаблон персонального skill'а для YouGile MCP.
+Для разработчика и продвинутого пользователя — не для агента.
 
-## Why bother
+---
 
-Without a personal context skill, the model spends ~3 tool calls
-(`list_projects` → `list_boards` → `list_columns`) every time you say
-"create a task in project X". With cached UUIDs in the skill you get
-to one `create_task` call. The skill also encodes operational rules that
-otherwise have to be re-explained every session ("HTML, not Markdown",
-"replace-not-append for arrays", "ms not seconds").
+## Что это
 
-## How to use
+Папка содержит SKILL.md и вспомогательные файлы для personalizing YouGile workflow.
 
-1. **Pick the install path.** Claude Code reads skills from:
-   - `~/.claude/skills/<name>/SKILL.md` (personal profile)
-   - `~/.claude-work/skills/<name>/SKILL.md` (work profile if you use one)
-   - or a plugin-bundled location
+- **SKILL.md** — главный файл, загружается Claude Code как skill context
+- **references/** — справочники, подгружаются агентом по необходимости
+- **templates/** — шаблоны для пользовательских файлов (briefing.md, filters.md)
 
-   For most setups: `~/.claude/skills/yougile-personal/SKILL.md`.
+Пользовательские данные (briefing.md, filters.md) хранятся в `~/.agents/skills/yougile-personal/`
+— вне репозитория. SKILL.md — шаблон в репозитории.
 
-2. **Copy `SKILL.md` into place.**
-   ```bash
-   mkdir -p ~/.claude/skills/yougile-personal
-   cp SKILL.md ~/.claude/skills/yougile-personal/SKILL.md
-   ```
+---
 
-3. **Fill the placeholders.** Every `{{TOKEN}}` and every `<!-- FILL: ... -->`
-   block needs your input. The fastest path is to ask an assistant to walk
-   you through it: open Claude Code, point it at the file, and say "fill
-   this YouGile skill for me — start by asking what workspaces I have set
-   up in `YOUGILE_KEY_*` env vars". It will then ask you per section.
+## Быстрый старт
 
-4. **Verify env on the MCP server.** The slugs in the skill must match
-   `YOUGILE_KEY_<SLUG>` env vars on the MCP server. If you say `team` in
-   the skill but env has `YOUGILE_KEY_WORK`, tool calls will fail.
+### 1. MCP сервер уже запущен?
 
-5. **First-run test.** Ask the assistant "list my YouGile workspaces" —
-   it should call `yougile_list_workspaces` and the result should match
-   your skill table. If not, fix the smaller of the two until they agree.
+Проверь что `yougile-mcp` настроен в Claude Code:
+```bash
+claude mcp list
+# или
+cat ~/.claude.json | grep yougile
+```
 
-## What to fill in (priority order)
+### 2. Первый запуск — setup через тул
 
-| Section | When to fill | Notes |
-|---|---|---|
-| Workspaces table | always | The most important table — slugs, labels, flags |
-| Default workspace | always | One slug. Where ambiguous requests land |
-| Self user IDs | always | One UUID per workspace — fetch via `yougile_get_me(workspace)` |
-| Project shortcuts | if you have > 1 project you work on regularly | Pure speed-up; can be empty initially |
-| Sticker shortcuts | only if you actually use stickers | Skip the whole section otherwise |
-| Routing rules | if you have > 1 workspace | Plain-language → workspace mapping |
-| Operational rules | already pre-filled | Edit if you want different defaults |
-| Style | already pre-filled | Match your communication style |
+В Claude Code запроси:
+```
+запусти setup_yougile_skill
+```
 
-## Refreshing UUIDs
+Или прочитай шаблон напрямую через MCP resource:
+```
+yougile://skill-template
+```
 
-Project / board / column UUIDs change when the workspace gets restructured
-(rare but real). When a cached UUID returns 404, the assistant will
-prompt you to update the skill. There's no automatic refresh yet — that
-might land later as a `yougile_refresh_workspace_index` tool.
+### 3. Ручная установка SKILL.md
 
-## License
+```bash
+# Копировать SKILL.md в директорию skill'а
+cp templates/yougile-personal-skill/SKILL.md \
+   ~/.agents/skills/yougile-personal/SKILL.md
 
-Whatever license the parent `yougile-mcp` repository uses applies. This
-template is purely yours to edit.
+# Убедиться что симлинки работают
+ls -la ~/.claude/skills/yougile-personal/
+ls -la ~/.claude-work/skills/yougile-personal/
+```
+
+### 4. Заполнить briefing.md
+
+```bash
+cp templates/yougile-personal-skill/templates/briefing.template.md \
+   ~/.agents/skills/yougile-personal/briefing.md
+# Отредактируй — замени все REPLACE_WITH_UUID реальными значениями
+```
+
+UUID проектов, досок, колонок — из тулов `list_projects`, `list_boards`, `list_columns`.
+
+---
+
+## Структура папки
+
+```
+templates/yougile-personal-skill/
+├── SKILL.md                      # Главный skill файл (≤250 строк)
+├── README.md                     # Этот файл
+├── references/
+│   ├── tool-keys.md              # Параметры read-тулов, include-ключи
+│   ├── describe-response.md      # Когда/как использовать describe_response
+│   ├── common-patterns.md        # 15 паттернов tool chains
+│   ├── custom-filters.md         # Система именованных фильтров
+│   └── quirks.md                 # API gotchas (ms vs sec, field mismatches)
+└── templates/
+    ├── briefing.template.md      # Шаблон персонального briefing.md
+    └── filters.template.md       # Шаблон файла именованных фильтров
+```
+
+---
+
+## Когда обновлять SKILL.md
+
+- При добавлении новых тулов в MCP (новые паттерны → common-patterns.md)
+- При обнаружении нового API quirk (→ quirks.md)
+- При изменении verbosity API (новые include-ключи → tool-keys.md)
+- После прогона eval-viewer и выявлении проблем с routing/anti-patterns
+
+После изменения SKILL.md — скопируй в установленную директорию:
+```bash
+cp templates/yougile-personal-skill/SKILL.md \
+   ~/.agents/skills/yougile-personal/SKILL.md
+```
+
+---
+
+## Eval-viewer тестирование
+
+Для тестирования SKILL через side-by-side сравнение — см. `evals/` директорию
+и `scripts/run_skill_eval.sh` (или Phase VII плана реализации).

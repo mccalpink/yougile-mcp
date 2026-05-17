@@ -17,6 +17,7 @@ from ...utils.verbosity import apply_verbosity, Verbosity
 async def list_columns_tool(
     board_id: Optional[str] = None,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -39,7 +40,7 @@ async def list_columns_tool(
             result = await columns.get_columns(client, board_id=board_id)
 
         await ctx.info(f"✅ Successfully retrieved {len(result)} columns")
-        return apply_verbosity(result, dto_type="column", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="column", verbosity=verbosity, include=include, is_list=True)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -97,6 +98,7 @@ async def create_column_tool(
 async def get_column_tool(
     column_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -115,7 +117,7 @@ async def get_column_tool(
             result = await columns.get_column(client, column_id)
 
         await ctx.info(f"✅ Successfully retrieved column: {result.get('title', column_id)}")
-        return apply_verbosity(result, dto_type="column", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="column", verbosity=verbosity, include=include)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")

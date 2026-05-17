@@ -9,6 +9,7 @@ from ...core import AuthManager, YouGileClient, models, auth_manager
 from ...api import auth as auth_api
 from ...utils.validation import validate_email, validate_uuid
 from ...utils.formatting import format_error_message, format_success_message
+from ...utils.normalizers import normalize_company_list
 
 
 async def get_companies_tool(login: str, password: str, ctx: Context) -> List[models.Company]:
@@ -36,7 +37,11 @@ async def get_companies_tool(login: str, password: str, ctx: Context) -> List[mo
             companies_data = await auth_api.get_companies(client, email, password)
             
             await ctx.debug(f"Found {len(companies_data)} companies")
-            
+
+            # Quirk: CompanyListDtoBase использует 'name', CompanyDto — 'title'.
+            # Выравниваем в единое поле 'title'.
+            companies_data = normalize_company_list(companies_data)
+
             # Convert to structured output
             companies = [
                 models.Company(

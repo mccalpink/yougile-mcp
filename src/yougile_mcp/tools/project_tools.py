@@ -11,19 +11,29 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import projects
 from ...utils.validation import validate_uuid, validate_non_empty_string
-async def list_projects_tool(workspace: str = "default", ctx: Context = None) -> List[models.Project]:
-    """Get list of all projects in the company."""
+from ...utils.verbosity import apply_verbosity, Verbosity
+
+
+async def list_projects_tool(
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> List[Dict[str, Any]]:
+    """Get list of all projects in the company.
+
+    Args:
+        verbosity: 'compact' (default) strips users-role map and timestamp;
+                   'full' returns raw API payload.
+    """
     try:
         await ctx.info("Fetching projects from YouGile...")
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.get_projects(client)
-            
-        project_list = [models.Project(**project) for project in result]
-        
-        await ctx.info(f"Successfully retrieved {len(project_list)} projects")
-        return project_list
-        
+
+        await ctx.info(f"Successfully retrieved {len(result)} projects")
+        return apply_verbosity(result, dto_type="project", verbosity=verbosity)
+
     except YouGileError as e:
         await ctx.error(f"API error while fetching projects: {e.message}")
         raise
@@ -82,8 +92,19 @@ async def create_project_tool(
         raise
 
 
-async def get_project_tool(project_id: str, workspace: str = "default", ctx: Context = None) -> models.Project:
-    """Get detailed information about a specific project."""
+async def get_project_tool(
+    project_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific project.
+
+    Args:
+        project_id: Project UUID.
+        verbosity: 'compact' (default) strips timestamp and the users-role map;
+                   'full' returns raw API payload.
+    """
     try:
         await ctx.info(f"Fetching project details: {project_id}")
 
@@ -91,12 +112,10 @@ async def get_project_tool(project_id: str, workspace: str = "default", ctx: Con
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await projects.get_project(client, project_id)
-            
-        project = models.Project(**result)
-        
-        await ctx.info(f"Successfully retrieved project: {project.title}")
-        return project
-        
+
+        await ctx.info(f"Successfully retrieved project: {result.get('title', project_id)}")
+        return apply_verbosity(result, dto_type="project", verbosity=verbosity)
+
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
         raise

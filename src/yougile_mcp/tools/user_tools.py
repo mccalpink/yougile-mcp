@@ -11,6 +11,7 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import users
 from ...utils.validation import validate_uuid, validate_email
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 async def list_users_tool(
@@ -18,9 +19,10 @@ async def list_users_tool(
     project_id: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
-) -> List[models.User]:
+) -> List[Dict[str, Any]]:
     """Get list of users in the company with optional server-side filters.
 
     Args:
@@ -28,6 +30,8 @@ async def list_users_tool(
         project_id: Filter to users belonging to this project (server-side).
         limit: Page size (default 50, max 1000).
         offset: Page offset (default 0).
+        verbosity: 'compact' (default) keeps only id/email/realName;
+                   'full' returns the raw API payload (status, lastActivity, isAdmin).
 
     NOTE: YouGile /users does not expose includeDeleted; deleted users are
     never returned via this endpoint.
@@ -47,10 +51,8 @@ async def list_users_tool(
                 project_id=project_id,
             )
 
-        user_list = [models.User(**user) for user in result]
-
-        await ctx.info(f"Successfully retrieved {len(user_list)} users")
-        return user_list
+        await ctx.info(f"Successfully retrieved {len(result)} users")
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
 
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -104,8 +106,19 @@ async def invite_user_tool(
         raise
 
 
-async def get_user_tool(user_id: str, workspace: str = "default", ctx: Context = None) -> models.User:
-    """Get detailed information about a specific user."""
+async def get_user_tool(
+    user_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific user.
+
+    Args:
+        user_id: User UUID.
+        verbosity: 'compact' (default) keeps only id/email/realName;
+                   'full' returns raw API payload (status, lastActivity, isAdmin).
+    """
     try:
         await ctx.info(f"Fetching user details: {user_id}")
 
@@ -113,12 +126,10 @@ async def get_user_tool(user_id: str, workspace: str = "default", ctx: Context =
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await users.get_user(client, user_id)
-            
-        user = models.User(**result)
-        
-        await ctx.info(f"Successfully retrieved user: {user.real_name}")
-        return user
-        
+
+        await ctx.info(f"Successfully retrieved user: {result.get('realName', user_id)}")
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
+
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
         raise
@@ -174,11 +185,19 @@ async def update_user_tool(
         raise
 
 
-async def get_me_tool(workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
+async def get_me_tool(
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
     """Get the user account associated with the workspace's API key.
 
     Useful for resolving the current bot/user identity (e.g. to filter tasks
     by `assigned_to=<me>` or `created_by=<me>`).
+
+    Args:
+        verbosity: 'compact' (default) keeps only id/email/realName;
+                   'full' returns raw API payload (status, lastActivity, isAdmin).
     """
     try:
         if ctx:
@@ -192,7 +211,7 @@ async def get_me_tool(workspace: str = "default", ctx: Context = None) -> Dict[s
                 f"Successfully retrieved current user: "
                 f"{result.get('realName') or result.get('email') or result.get('id')}"
             )
-        return result
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
 
     except YouGileError as e:
         if ctx:

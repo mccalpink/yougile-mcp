@@ -15,6 +15,7 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import webhooks
 from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 def _redact_url(url: str) -> str:
@@ -55,6 +56,7 @@ async def list_webhooks_tool(
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -64,6 +66,10 @@ async def list_webhooks_tool(
     webhooks. The full list is fetched on every call; limit/offset are
     applied client-side. Be mindful with companies that have many webhook
     subscriptions.
+
+    Args:
+        verbosity: 'compact' (default) drops lastSuccess/failuresSinceLastSuccess;
+                   'full' returns raw API payload.
     """
     try:
         if ctx:
@@ -86,7 +92,7 @@ async def list_webhooks_tool(
             await ctx.info(
                 f"Successfully retrieved {len(page)} webhook(s) (of {len(result)} total)"
             )
-        return page
+        return apply_verbosity(page, dto_type="webhook", verbosity=verbosity)
 
     except ValidationError as e:
         if ctx:

@@ -11,6 +11,7 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import boards
 from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 async def list_boards_tool(
@@ -19,28 +20,30 @@ async def list_boards_tool(
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
-) -> List[models.Board]:
+) -> List[Dict[str, Any]]:
     """Get list of boards with optional filtering.
-    
+
     Args:
         project_id: Filter boards by project ID
         title: Filter boards by title (partial match)
         limit: Maximum number of boards to return (default: 50)
         offset: Number of boards to skip (default: 0)
         include_deleted: Include deleted boards (default: False)
+        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
     """
     try:
         await ctx.info(f"Fetching boards from YouGile (limit: {limit}, offset: {offset})...")
-        
+
         if project_id:
             project_id = validate_uuid(project_id, "project_id")
             await ctx.info(f"Filtering by project: {project_id}")
-        
+
         if title:
             await ctx.info(f"Filtering by title: {title}")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.get_boards(
                 client,
@@ -50,11 +53,9 @@ async def list_boards_tool(
                 offset=offset,
                 include_deleted=include_deleted
             )
-            
-        board_list = [models.Board(**board) for board in result]
-        
-        await ctx.info(f"Successfully retrieved {len(board_list)} boards")
-        return board_list
+
+        await ctx.info(f"Successfully retrieved {len(result)} boards")
+        return apply_verbosity(result, dto_type="board", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -127,8 +128,18 @@ async def create_board_tool(
         raise
 
 
-async def get_board_tool(board_id: str, workspace: str = "default", ctx: Context = None) -> models.Board:
-    """Get detailed information about a specific board."""
+async def get_board_tool(
+    board_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific board.
+
+    Args:
+        board_id: Board UUID.
+        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+    """
     try:
         await ctx.info(f"Fetching board details: {board_id}")
 
@@ -136,12 +147,10 @@ async def get_board_tool(board_id: str, workspace: str = "default", ctx: Context
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await boards.get_board(client, board_id)
-            
-        board = models.Board(**result)
-        
-        await ctx.info(f"Successfully retrieved board: {board.title}")
-        return board
-        
+
+        await ctx.info(f"Successfully retrieved board: {result.get('title', board_id)}")
+        return apply_verbosity(result, dto_type="board", verbosity=verbosity)
+
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
         raise

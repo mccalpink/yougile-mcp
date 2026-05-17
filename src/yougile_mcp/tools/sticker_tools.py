@@ -10,29 +10,35 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import stickers
 from ...utils.validation import validate_uuid
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 async def list_string_stickers_tool(
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
-    """Get list of string (custom) stickers with their basic information."""
+    """Get list of string (custom) stickers with their basic information.
+
+    Args:
+        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+    """
     try:
         if ctx:
             await ctx.info(f"Fetching string stickers (limit: {limit}, offset: {offset})...")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await stickers.get_string_stickers(client, limit, offset, include_deleted)
-            
+
         # Extract content from paginated response
         sticker_list = result.get("content", [])
-        
+
         if ctx:
             await ctx.info(f"Successfully retrieved {len(sticker_list)} string stickers")
-        return sticker_list
+        return apply_verbosity(sticker_list, dto_type="sticker", verbosity=verbosity)
         
     except YouGileError as e:
         if ctx:
@@ -44,8 +50,18 @@ async def list_string_stickers_tool(
         raise
 
 
-async def get_string_sticker_tool(sticker_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
-    """Get detailed information about a specific string sticker including its states."""
+async def get_string_sticker_tool(
+    sticker_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific string sticker including its states.
+
+    Args:
+        sticker_id: Sticker UUID.
+        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+    """
     try:
         if ctx:
             await ctx.info(f"Fetching string sticker details: {sticker_id}")
@@ -54,10 +70,10 @@ async def get_string_sticker_tool(sticker_id: str, workspace: str = "default", c
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await stickers.get_string_sticker(client, sticker_id)
-            
+
         if ctx:
             await ctx.info(f"Successfully retrieved sticker: {result.get('name', sticker_id)}")
-        return result
+        return apply_verbosity(result, dto_type="sticker", verbosity=verbosity)
         
     except ValidationError as e:
         if ctx:

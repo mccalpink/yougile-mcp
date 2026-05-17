@@ -12,19 +12,29 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import chats
 from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 # Group Chat Management
-async def list_group_chats_tool(workspace: str = "default", ctx: Context = None) -> List[Dict[str, Any]]:
-    """Get list of all group chats."""
+async def list_group_chats_tool(
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> List[Dict[str, Any]]:
+    """Get list of all group chats.
+
+    Args:
+        verbosity: 'compact' (default) strips userRoleMap/roleConfigMap;
+                   'full' returns raw API payload.
+    """
     try:
         await ctx.info("Fetching group chats from YouGile...")
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await chats.get_group_chats(client)
-            
+
         await ctx.info(f"Successfully retrieved {len(result)} group chats")
-        return result
+        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity)
         
     except YouGileError as e:
         await ctx.error(f"API error while fetching group chats: {e.message}")
@@ -116,8 +126,19 @@ async def create_group_chat_tool(
         raise
 
 
-async def get_group_chat_tool(chat_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
-    """Get detailed information about a specific group chat."""
+async def get_group_chat_tool(
+    chat_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific group chat.
+
+    Args:
+        chat_id: Chat UUID.
+        verbosity: 'compact' (default) strips userRoleMap/roleConfigMap;
+                   'full' returns raw API payload.
+    """
     try:
         await ctx.info(f"Fetching group chat details: {chat_id}")
 
@@ -125,9 +146,9 @@ async def get_group_chat_tool(chat_id: str, workspace: str = "default", ctx: Con
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await chats.get_group_chat(client, chat_id)
-            
+
         await ctx.info(f"Successfully retrieved group chat: {result.get('title', chat_id)}")
-        return result
+        return apply_verbosity(result, dto_type="group_chat", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -144,29 +165,32 @@ async def get_group_chat_tool(chat_id: str, workspace: str = "default", ctx: Con
 async def get_chat_messages_tool(
     chat_id: str,
     limit: int = 50,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get messages from a chat (task comments or group chat messages).
-    
+
     Args:
         chat_id: ID of the chat (can be task ID for task comments)
         limit: Maximum number of messages to return
+        verbosity: 'compact' (default) drops textHtml/editTimestamp/empty reactions;
+                   'full' returns raw API payload.
     """
     try:
         await ctx.info(f"Fetching messages from chat: {chat_id}")
-        
+
         chat_id = validate_uuid(chat_id, "chat_id")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await chats.get_chat_messages(client, chat_id)
-            
+
         # Apply limit if needed
         if limit and len(result) > limit:
             result = result[-limit:]  # Get latest messages
-            
+
         await ctx.info(f"Successfully retrieved {len(result)} messages")
-        return result
+        return apply_verbosity(result, dto_type="message", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -243,10 +267,18 @@ async def send_chat_message_tool(
 async def get_chat_message_tool(
     chat_id: str,
     message_id: str,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Get a specific message from a chat."""
+    """Get a specific message from a chat.
+
+    Args:
+        chat_id: Chat UUID.
+        message_id: Message UUID.
+        verbosity: 'compact' (default) drops textHtml/editTimestamp/empty reactions;
+                   'full' returns raw API payload.
+    """
     try:
         await ctx.info(f"Fetching message {message_id} from chat: {chat_id}")
 
@@ -255,9 +287,9 @@ async def get_chat_message_tool(
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await chats.get_chat_message(client, chat_id, message_id)
-            
+
         await ctx.info(f"Successfully retrieved message")
-        return result
+        return apply_verbosity(result, dto_type="message", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -347,13 +379,16 @@ async def update_chat_message_tool(
 async def get_task_comments_tool(
     task_id: str,
     limit: int = 50,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get comments for a specific task (alias for get_chat_messages with task ID)."""
     if ctx:
         await ctx.info(f"Fetching comments for task: {task_id}")
-    return await get_chat_messages_tool(task_id, limit, workspace=workspace, ctx=ctx)
+    return await get_chat_messages_tool(
+        task_id, limit, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 async def add_task_comment_tool(

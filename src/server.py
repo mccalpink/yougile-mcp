@@ -24,6 +24,7 @@ from .config import settings
 from .core import auth
 from .core.client import YouGileClient
 from .core.models import MessageReact, TaskColor
+from .utils.verbosity import Verbosity
 from .api import auth as auth_api
 from .yougile_mcp.tools.auth_tools import (
     create_api_key_tool,
@@ -191,6 +192,20 @@ UUIDParam = Annotated[
     ),
 ]
 
+VerbosityParam = Annotated[
+    Verbosity,
+    Field(
+        description=(
+            "Response detail level. 'compact' (default) strips noisy fields "
+            "(timestamps, internal IDs, empty defaults) and inserts a "
+            "_meta.omitted_fields hint when anything was dropped. 'full' "
+            "returns the raw YouGile API payload — use for debugging audit "
+            "history, exact timestamps, or extension data."
+        ),
+        examples=["compact", "full"],
+    ),
+]
+
 
 # ---------------------------------------------------------------------------
 # Authorization & workspaces
@@ -325,6 +340,7 @@ async def list_users(
     ] = None,
     limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -332,17 +348,19 @@ async def list_users(
 
     USE WHEN: mapping a name/email to a user_id before assignment, or for
     roster snapshots.
-    RETURNS: lightweight user records: id, email, realName, isAdmin, status.
-    Does NOT include department membership or custom fields — call get_user
-    for the full profile.
+    RETURNS (compact, default): {id, email, realName} per user. Use
+    verbosity="full" to additionally include isAdmin, status (online/offline)
+    and lastActivity timestamp.
     NOTE: YouGile /users does not support `includeDeleted`; soft-deleted
-    users are never returned here.
+    users are never returned here. Does NOT include department membership
+    or custom fields — call get_user for the full profile.
     """
     return await list_users_tool(
         email=email,
         project_id=project_id,
         limit=limit,
         offset=offset,
+        verbosity=verbosity,
         workspace=workspace,
         ctx=ctx,
     )
@@ -378,16 +396,19 @@ async def invite_user(
 @mcp.tool(annotations=ANN_READ)
 async def get_user(
     user_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get full profile of one user.
+    """Get profile of one user.
 
-    USE WHEN: you need fields not returned by list_users (full department
-    list, status timestamp, custom data).
-    RETURNS: full UserDto.
+    USE WHEN: looking up a single user by ID.
+    RETURNS (compact, default): {id, email, realName}. Use verbosity="full"
+    to additionally include isAdmin, status, lastActivity (raw UserDto).
     """
-    return await get_user_tool(user_id=user_id, workspace=workspace, ctx=ctx)
+    return await get_user_tool(
+        user_id=user_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
@@ -432,6 +453,7 @@ async def remove_user(
 
 @mcp.tool(annotations=ANN_READ)
 async def get_me(
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -439,8 +461,10 @@ async def get_me(
 
     USE WHEN: you need the calling user's UUID (e.g. to filter
     list_tasks(assigned_to=me) without asking the user).
+    RETURNS (compact, default): {id, email, realName}. Use verbosity="full"
+    for isAdmin/status/lastActivity.
     """
-    return await get_me_tool(workspace=workspace, ctx=ctx)
+    return await get_me_tool(verbosity=verbosity, workspace=workspace, ctx=ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +474,7 @@ async def get_me(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_projects(
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -457,9 +482,12 @@ async def list_projects(
 
     USE WHEN: you do not yet know the project_id. The result is small (most
     companies have <50 projects) — safe to call on demand.
-    RETURNS: list of {id, title, users, timestamp}.
+    RETURNS (compact, default): {id, title} per project. Use verbosity="full"
+    to additionally include timestamp and the {user_id: role} users map
+    (~2.5x larger). Full mode is required when you need to check who can
+    access a project before assigning a task.
     """
-    return await list_projects_tool(workspace=workspace, ctx=ctx)
+    return await list_projects_tool(verbosity=verbosity, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
@@ -493,11 +521,18 @@ async def create_project(
 @mcp.tool(annotations=ANN_READ)
 async def get_project(
     project_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one project's full details including users map."""
-    return await get_project_tool(project_id=project_id, workspace=workspace, ctx=ctx)
+    """Get one project's details.
+
+    RETURNS (compact, default): {id, title}. Use verbosity="full" to also
+    include timestamp and the users-role map (needed for permission checks).
+    """
+    return await get_project_tool(
+        project_id=project_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
@@ -551,16 +586,19 @@ async def list_boards(
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     offset: Annotated[int, Field(description="Page offset, default 0.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted boards.")] = False,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List boards, optionally filtered by project or title.
 
-    RETURNS: list of {id, title, projectId, stickers}.
+    RETURNS (compact, default): {id, title, projectId, stickers} per board
+    (default deleted=false flag stripped). Use verbosity="full" for raw API.
     """
     return await list_boards_tool(
         project_id=project_id, title=title, limit=limit, offset=offset,
-        include_deleted=include_deleted, workspace=workspace, ctx=ctx,
+        include_deleted=include_deleted, verbosity=verbosity,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -599,11 +637,18 @@ async def create_board(
 @mcp.tool(annotations=ANN_READ)
 async def get_board(
     board_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one board's full configuration."""
-    return await get_board_tool(board_id=board_id, workspace=workspace, ctx=ctx)
+    """Get one board's configuration.
+
+    RETURNS (compact, default): {id, title, projectId, stickers} (default
+    deleted flag stripped). Use verbosity="full" for raw API.
+    """
+    return await get_board_tool(
+        board_id=board_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
@@ -648,6 +693,7 @@ async def list_columns(
         Optional[str],
         Field(description="Board UUID filter; omit to list all columns in the workspace."),
     ] = None,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -655,8 +701,13 @@ async def list_columns(
 
     USE WHEN: you have a board_id but need the column_id (e.g. before
     create_task or update_task(column_id=...)).
+    NOTE: ColumnDto is already minimal; compact and full are nearly
+    identical here. The verbosity arg is exposed only for consistency
+    with other list_* / get_* tools.
     """
-    return await list_columns_tool(board_id=board_id, workspace=workspace, ctx=ctx)
+    return await list_columns_tool(
+        board_id=board_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
@@ -689,11 +740,18 @@ async def create_column(
 @mcp.tool(annotations=ANN_READ)
 async def get_column(
     column_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one column's details."""
-    return await get_column_tool(column_id=column_id, workspace=workspace, ctx=ctx)
+    """Get one column's details.
+
+    NOTE: ColumnDto is already minimal; verbosity rarely changes the
+    output. Kept for consistency.
+    """
+    return await get_column_tool(
+        column_id=column_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
@@ -750,18 +808,22 @@ async def list_task_summaries(
             ),
         ),
     ] = None,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List minimal task summaries (id + title) with pagination.
 
     USE WHEN: you need a roster and full task payloads would waste tokens.
+    RETURNS (compact, default): paging envelope; each task strips timestamps,
+    createdBy, idTaskCommon/idTaskProject, type and empty default fields.
+    Use verbosity="full" to see audit history, exact timestamps, or creator.
     RELATED: list_tasks for the full task body.
     """
     return await list_task_summaries_tool(
         limit=limit, offset=offset,
         sticker_id=sticker_id, sticker_state_id=sticker_state_id,
-        workspace=workspace, ctx=ctx,
+        verbosity=verbosity, workspace=workspace, ctx=ctx,
     )
 
 
@@ -804,22 +866,28 @@ async def list_tasks(
             ),
         ),
     ] = None,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List full task records with optional filters.
 
     USE WHEN: you need task bodies (description, stickers, deadlines).
+    RETURNS (compact, default): each task contains id, title, columnId, plus
+    completion/archive flags and content fields (description, checklists,
+    deadline, assigned) only when set. Strips timestamps, createdBy,
+    idTaskCommon/idTaskProject, type, deadline.history. Saves ~37% tokens.
+    Use verbosity="full" when you need audit history, exact creation
+    timestamps, who created tasks, or extension data.
     NOTE: the API does NOT support filtering by deadline range or
     creation date — those must be applied client-side after fetching.
-    For date filtering, prefer get_tasks_by_date. Sticker filtering is
-    supported via sticker_id / sticker_state_id (server-side).
+    For date filtering, prefer get_tasks_by_date.
     """
     return await list_tasks_tool(
         column_id=column_id, assigned_to=assigned_to, title=title,
         limit=limit, offset=offset, include_deleted=include_deleted,
         sticker_id=sticker_id, sticker_state_id=sticker_state_id,
-        workspace=workspace, ctx=ctx,
+        verbosity=verbosity, workspace=workspace, ctx=ctx,
     )
 
 
@@ -960,11 +1028,22 @@ async def create_task(
 @mcp.tool(annotations=ANN_READ)
 async def get_task(
     task_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one task's full payload (title, description, assigned, stickers, etc.)."""
-    return await get_task_tool(task_id=task_id, workspace=workspace, ctx=ctx)
+    """Get one task's payload (title, description, assigned, stickers, etc.).
+
+    RETURNS (compact, default): drops timestamps (creation/archived/completed),
+    createdBy, idTaskCommon/idTaskProject (duplicates of id), type,
+    deadline.history, and empty default fields. _meta.omitted_fields lists
+    what was actually dropped for this specific task.
+    Use verbosity="full" to access audit history, the original creator,
+    or extension data (raw TaskDto).
+    """
+    return await get_task_tool(
+        task_id=task_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
@@ -988,12 +1067,16 @@ async def get_tasks_by_date(
     ] = None,
     completed_only: Annotated[bool, Field(description="Restrict to completed tasks.")] = False,
     limit: Annotated[int, Field(description="Max tasks fetched before client-side filtering.")] = 5000,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List tasks filtered by date and optional assignee / creator.
 
     USE WHEN: building standup, productivity, or retrospective reports.
+    RETURNS (compact, default): same per-task pruning as list_tasks.
+    Use verbosity="full" when you need raw payloads (e.g. to inspect
+    creation timestamps separately from the filter date).
     EXAMPLES:
       get_tasks_by_date(assigned_to="<uid>") — today's tasks for a user.
       get_tasks_by_date(target_date="2026-01-15", completed_only=True).
@@ -1001,7 +1084,8 @@ async def get_tasks_by_date(
     """
     return await get_tasks_by_date_tool(
         assigned_to=assigned_to, created_by=created_by, target_date=target_date,
-        completed_only=completed_only, limit=limit, workspace=workspace, ctx=ctx,
+        completed_only=completed_only, limit=limit, verbosity=verbosity,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -1256,6 +1340,7 @@ async def list_string_stickers(
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted stickers.")] = False,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1263,18 +1348,19 @@ async def list_string_stickers(
 
     USE WHEN: you need to discover sticker_ids (e.g. 'Priority', 'Sprint')
     before setting a sticker on a task.
-    RETURNS: list of {id, title, type, states} (states is a brief view —
-    call get_string_sticker for full state details).
+    RETURNS (compact, default): list of {id, name, icon, states} per sticker
+    with default deleted flag stripped. Use verbosity="full" for raw API.
     """
     return await list_string_stickers_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
-        workspace=workspace, ctx=ctx,
+        verbosity=verbosity, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_string_sticker(
     sticker_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -1282,8 +1368,11 @@ async def get_string_sticker(
 
     USE WHEN: you have a sticker_id (from list_string_stickers) and need
     state_ids — for example to set a 'Priority: High' value on a task.
+    Compact (default) strips the default deleted flag.
     """
-    return await get_string_sticker_tool(sticker_id=sticker_id, workspace=workspace, ctx=ctx)
+    return await get_string_sticker_tool(
+        sticker_id=sticker_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
@@ -1340,11 +1429,18 @@ async def decode_task_stickers(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_group_chats(
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
-    """List standalone group chats (not bound to tasks)."""
-    return await list_group_chats_tool(workspace=workspace, ctx=ctx)
+    """List standalone group chats (not bound to tasks).
+
+    Compact (default) drops the bulky userRoleMap/roleConfigMap blocks —
+    use verbosity="full" if you need permission/role configuration.
+    """
+    return await list_group_chats_tool(
+        verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
@@ -1385,11 +1481,18 @@ async def create_group_chat(
 @mcp.tool(annotations=ANN_READ)
 async def get_group_chat(
     chat_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one group chat's details."""
-    return await get_group_chat_tool(chat_id=chat_id, workspace=workspace, ctx=ctx)
+    """Get one group chat's details.
+
+    Compact (default) drops userRoleMap/roleConfigMap. Use verbosity="full"
+    for permission/role configuration.
+    """
+    return await get_group_chat_tool(
+        chat_id=chat_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
@@ -1404,16 +1507,21 @@ async def get_chat_messages(
         ),
     ],
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List messages in a chat or task comment thread.
 
     USE WHEN: reading task comments or a group chat history.
+    Compact (default) drops textHtml (duplicates `text` with markup),
+    editTimestamp, empty reactions, and default deleted flag. Use
+    verbosity="full" if you need the HTML body or edit timestamps.
     RELATED: get_task_comments is an alias for tasks.
     """
     return await get_chat_messages_tool(
-        chat_id=chat_id, limit=limit, workspace=workspace, ctx=ctx,
+        chat_id=chat_id, limit=limit, verbosity=verbosity,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -1458,12 +1566,18 @@ async def send_chat_message(
 async def get_chat_message(
     chat_id: UUIDParam,
     message_id: UUIDParam,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
-    """Get one chat message by ID."""
+    """Get one chat message by ID.
+
+    Compact (default) drops textHtml/editTimestamp/empty reactions.
+    Use verbosity="full" for raw API payload.
+    """
     return await get_chat_message_tool(
-        chat_id=chat_id, message_id=message_id, workspace=workspace, ctx=ctx,
+        chat_id=chat_id, message_id=message_id, verbosity=verbosity,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -1495,12 +1609,14 @@ async def update_chat_message(
 async def get_task_comments(
     task_id: UUIDParam,
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List comments on a task (alias for get_chat_messages(chat_id=task_id))."""
     return await get_task_comments_tool(
-        task_id=task_id, limit=limit, workspace=workspace, ctx=ctx,
+        task_id=task_id, limit=limit, verbosity=verbosity,
+        workspace=workspace, ctx=ctx,
     )
 
 
@@ -1535,6 +1651,7 @@ async def list_webhooks(
     limit: Annotated[int, Field(description="Page size (client-side, default 50).")] = 50,
     offset: Annotated[int, Field(description="Page offset (client-side).")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted webhooks.")] = False,
+    verbosity: VerbosityParam = "compact",
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1542,10 +1659,12 @@ async def list_webhooks(
 
     NOTE: YouGile does not paginate /webhooks server-side; the full list is
     fetched and paginated client-side.
+    Compact (default) drops lastSuccess/failuresSinceLastSuccess; use
+    verbosity="full" when debugging delivery failures.
     """
     return await list_webhooks_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
-        workspace=workspace, ctx=ctx,
+        verbosity=verbosity, workspace=workspace, ctx=ctx,
     )
 
 

@@ -2,12 +2,15 @@
 
 from .validation import validate_uuid, validate_email, validate_required_fields
 from .formatting import format_task_response, format_project_response, format_error_message
+from .verbosity import apply_verbosity, Verbosity
 
 __all__ = [
     "validate_uuid",
-    "validate_email", 
+    "validate_email",
     "validate_required_fields",
     "format_task_response",
     "format_project_response",
     "format_error_message",
+    "apply_verbosity",
+    "Verbosity",
 ]

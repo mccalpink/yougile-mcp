@@ -13,6 +13,7 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import tasks
 from ...utils.validation import validate_uuid, validate_non_empty_string, normalize_deadline
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 async def list_task_summaries_tool(
@@ -20,6 +21,7 @@ async def list_task_summaries_tool(
     offset: int = 0,
     sticker_id: Optional[str] = None,
     sticker_state_id: Optional[str] = None,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -31,6 +33,7 @@ async def list_task_summaries_tool(
         sticker_id: Server-side filter — only return tasks carrying this sticker.
         sticker_state_id: Server-side filter — only return tasks whose sticker
             value matches this state ID (typically combined with sticker_id).
+        verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
     """
     try:
         if ctx:
@@ -47,7 +50,7 @@ async def list_task_summaries_tool(
 
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} task summaries")
-        return result
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
         
     except YouGileError as e:
         if ctx:
@@ -68,6 +71,7 @@ async def list_tasks_tool(
     include_deleted: bool = False,
     sticker_id: Optional[str] = None,
     sticker_state_id: Optional[str] = None,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -83,6 +87,7 @@ async def list_tasks_tool(
         sticker_id: Server-side filter — only return tasks carrying this sticker.
         sticker_state_id: Server-side filter — only return tasks whose sticker
             value matches this state ID (typically combined with sticker_id).
+        verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
     """
     try:
         if ctx:
@@ -117,7 +122,7 @@ async def list_tasks_tool(
 
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} detailed tasks")
-        return result
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
         
     except ValidationError as e:
         if ctx:
@@ -296,8 +301,18 @@ async def create_task_tool(
         raise
 
 
-async def get_task_tool(task_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
-    """Get detailed information about a specific task."""
+async def get_task_tool(
+    task_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific task.
+
+    Args:
+        task_id: Task UUID.
+        verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payload.
+    """
     try:
         if ctx:
             await ctx.info(f"Fetching task details: {task_id}")
@@ -306,10 +321,10 @@ async def get_task_tool(task_id: str, workspace: str = "default", ctx: Context =
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await tasks.get_task(client, task_id)
-            
+
         if ctx:
             await ctx.info(f"✅ Successfully retrieved task: {result.get('title', task_id)}")
-        return result
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
         
     except ValidationError as e:
         if ctx:
@@ -331,17 +346,19 @@ async def get_tasks_by_date_tool(
     target_date: Optional[str] = None,
     completed_only: bool = False,
     limit: int = 5000,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get tasks filtered by date and completion status.
-    
+
     Args:
         assigned_to: Filter tasks by assigned user ID (API filter)
         created_by: Filter tasks by creator user ID (client-side filter)
         target_date: Date in YYYY-MM-DD format (default: today)
         completed_only: Only return completed tasks
         limit: Maximum number of tasks to fetch and filter (max 5000)
+        verbosity: 'compact' (default) strips noisy fields; 'full' returns raw API payloads.
     """
     try:
         if ctx:
@@ -470,8 +487,8 @@ async def get_tasks_by_date_tool(
         
         if ctx:
             await ctx.info(f"✅ Found {len(filtered_tasks)} tasks matching criteria for {filter_date}, returning {len(final_results)}")
-        
-        return final_results
+
+        return apply_verbosity(final_results, dto_type="task", verbosity=verbosity)
         
     except ValidationError as e:
         if ctx:

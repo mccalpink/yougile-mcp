@@ -128,6 +128,36 @@ Override with:
 Dotfiles and paths matching `credentials`, `secret`, `password`,
 `.env`, `.ssh`, `private_key` (case-insensitive) are always blocked.
 
+## Response verbosity
+
+Read tools (`list_*`, `get_*`) default to `verbosity="compact"` — they strip
+timestamps, internal IDs, and empty fields to save tokens (~37% on a
+typical session, up to 60% on `list_projects`). When something is dropped,
+the response includes a `_meta.omitted_fields` block so the agent knows
+what to ask for if it needs the full data:
+
+```json
+{
+  "_meta": {
+    "verbosity": "compact",
+    "omitted_fields": ["timestamp", "createdBy", "idTaskCommon", ...],
+    "hint": "Pass verbosity='full' to include all fields"
+  },
+  "id": "...",
+  "title": "...",
+  ...
+}
+```
+
+Pass `verbosity="full"` on any read tool to bypass pruning and get the
+raw API response (useful for debugging audit history, exact timestamps,
+or accessing extension data).
+
+Tools without a `verbosity` parameter return minimal payloads already
+(`get_string_sticker_state`, `get_sprint_sticker_state`,
+`get_task_chat_subscribers`, `decode_task_stickers`) or are write
+operations (`create_*`, `update_*`, `delete_*`, `send_*`).
+
 ## Personal Claude skill
 
 A starter skill that pairs with this MCP lives at

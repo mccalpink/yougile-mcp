@@ -11,17 +11,22 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import columns
 from ...utils.validation import validate_uuid, validate_non_empty_string
+from ...utils.verbosity import apply_verbosity, Verbosity
 
 
 async def list_columns_tool(
     board_id: Optional[str] = None,
+    verbosity: Verbosity = "compact",
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get list of columns with optional filtering by board.
-    
+
     Args:
         board_id: Filter columns by specific board ID
+        verbosity: 'compact' (default) strips default deleted flag. Columns
+                   are already minimal — compact rarely changes anything here;
+                   kept for consistency across read tools.
     """
     try:
         if board_id:
@@ -29,12 +34,12 @@ async def list_columns_tool(
             await ctx.info(f"Fetching columns from board: {board_id}")
         else:
             await ctx.info("Fetching all columns from YouGile...")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.get_columns(client, board_id=board_id)
-            
+
         await ctx.info(f"✅ Successfully retrieved {len(result)} columns")
-        return result
+        return apply_verbosity(result, dto_type="column", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -89,8 +94,18 @@ async def create_column_tool(
         raise
 
 
-async def get_column_tool(column_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
-    """Get detailed information about a specific column."""
+async def get_column_tool(
+    column_id: str,
+    verbosity: Verbosity = "compact",
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Get detailed information about a specific column.
+
+    Args:
+        column_id: Column UUID.
+        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+    """
     try:
         await ctx.info(f"Fetching column details: {column_id}")
 
@@ -98,9 +113,9 @@ async def get_column_tool(column_id: str, workspace: str = "default", ctx: Conte
 
         async with YouGileClient(registry.get(workspace)) as client:
             result = await columns.get_column(client, column_id)
-            
+
         await ctx.info(f"✅ Successfully retrieved column: {result.get('title', column_id)}")
-        return result
+        return apply_verbosity(result, dto_type="column", verbosity=verbosity)
         
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")

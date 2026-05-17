@@ -24,9 +24,11 @@ async def list_group_chats_tool(
 ) -> List[Dict[str, Any]]:
     """Get list of all group chats.
 
-    Args:
-        verbosity: 'compact' (default) strips userRoleMap/roleConfigMap;
-                   'full' returns raw API payload.
+    RETURNS:
+      compact (default): {id, title, users, deleted if true}.
+        userRoleMap/roleConfigMap dropped (opt-in via include=['chat_maps']).
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info("Fetching group chats from YouGile...")
@@ -140,6 +142,12 @@ async def get_group_chat_tool(
         chat_id: Chat UUID.
         verbosity: 'compact' (default) strips userRoleMap/roleConfigMap;
                    'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, users}.
+        userRoleMap/roleConfigMap dropped (opt-in via include=['chat_maps']).
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching group chat details: {chat_id}")
@@ -179,6 +187,11 @@ async def get_chat_messages_tool(
         limit: Maximum number of messages to return
         verbosity: 'compact' (default) drops textHtml/editTimestamp/empty reactions;
                    'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, text, label, timestamp, userId, reactions if non-empty}.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching messages from chat: {chat_id}")
@@ -282,6 +295,11 @@ async def get_chat_message_tool(
         message_id: Message UUID.
         verbosity: 'compact' (default) drops textHtml/editTimestamp/empty reactions;
                    'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, text, label, timestamp, userId, reactions if non-empty}.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching message {message_id} from chat: {chat_id}")

@@ -200,9 +200,24 @@ VerbosityParam = Annotated[
             "(timestamps, internal IDs, empty defaults) and inserts a "
             "_meta.omitted_fields hint when anything was dropped. 'full' "
             "returns the raw YouGile API payload — use for debugging audit "
-            "history, exact timestamps, or extension data."
+            "history, exact timestamps, or extension data. 'custom' returns "
+            "only {id} per item; use include[] to add specific fields."
         ),
-        examples=["compact", "full"],
+        examples=["compact", "full", "custom"],
+    ),
+]
+
+IncludeParam = Annotated[
+    Optional[List[str]],
+    Field(
+        description=(
+            "List of opt-in field keys to include in the response. "
+            "Works with any verbosity level. Special keys: 'description', "
+            "'checklists', 'stickers', 'stopwatch', 'timer', 'time_tracking', "
+            "'deal', 'extension_data', 'deadline_history', 'timestamps', 'all'. "
+            "Unknown keys go to _meta.unknown_includes without error."
+        ),
+        examples=[["description"], ["checklists", "stickers"], ["all"]],
     ),
 ]
 
@@ -341,6 +356,7 @@ async def list_users(
     limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -361,6 +377,7 @@ async def list_users(
         limit=limit,
         offset=offset,
         verbosity=verbosity,
+        include=include,
         workspace=workspace,
         ctx=ctx,
     )
@@ -397,6 +414,7 @@ async def invite_user(
 async def get_user(
     user_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -407,7 +425,7 @@ async def get_user(
     to additionally include isAdmin, status, lastActivity (raw UserDto).
     """
     return await get_user_tool(
-        user_id=user_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        user_id=user_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -454,6 +472,7 @@ async def remove_user(
 @mcp.tool(annotations=ANN_READ)
 async def get_me(
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -464,7 +483,7 @@ async def get_me(
     RETURNS (compact, default): {id, email, realName}. Use verbosity="full"
     for isAdmin/status/lastActivity.
     """
-    return await get_me_tool(verbosity=verbosity, workspace=workspace, ctx=ctx)
+    return await get_me_tool(verbosity=verbosity, include=include, workspace=workspace, ctx=ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +494,7 @@ async def get_me(
 @mcp.tool(annotations=ANN_READ)
 async def list_projects(
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -487,7 +507,7 @@ async def list_projects(
     (~2.5x larger). Full mode is required when you need to check who can
     access a project before assigning a task.
     """
-    return await list_projects_tool(verbosity=verbosity, workspace=workspace, ctx=ctx)
+    return await list_projects_tool(verbosity=verbosity, include=include, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
@@ -522,6 +542,7 @@ async def create_project(
 async def get_project(
     project_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -531,7 +552,7 @@ async def get_project(
     include timestamp and the users-role map (needed for permission checks).
     """
     return await get_project_tool(
-        project_id=project_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        project_id=project_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -587,6 +608,7 @@ async def list_boards(
     offset: Annotated[int, Field(description="Page offset, default 0.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted boards.")] = False,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -597,7 +619,7 @@ async def list_boards(
     """
     return await list_boards_tool(
         project_id=project_id, title=title, limit=limit, offset=offset,
-        include_deleted=include_deleted, verbosity=verbosity,
+        include_deleted=include_deleted, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
     )
 
@@ -638,6 +660,7 @@ async def create_board(
 async def get_board(
     board_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -647,7 +670,7 @@ async def get_board(
     deleted flag stripped). Use verbosity="full" for raw API.
     """
     return await get_board_tool(
-        board_id=board_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        board_id=board_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -694,6 +717,7 @@ async def list_columns(
         Field(description="Board UUID filter; omit to list all columns in the workspace."),
     ] = None,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -706,7 +730,7 @@ async def list_columns(
     with other list_* / get_* tools.
     """
     return await list_columns_tool(
-        board_id=board_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        board_id=board_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -741,6 +765,7 @@ async def create_column(
 async def get_column(
     column_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -750,7 +775,7 @@ async def get_column(
     output. Kept for consistency.
     """
     return await get_column_tool(
-        column_id=column_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        column_id=column_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -809,6 +834,7 @@ async def list_task_summaries(
         ),
     ] = None,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -823,7 +849,7 @@ async def list_task_summaries(
     return await list_task_summaries_tool(
         limit=limit, offset=offset,
         sticker_id=sticker_id, sticker_state_id=sticker_state_id,
-        verbosity=verbosity, workspace=workspace, ctx=ctx,
+        verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -867,6 +893,7 @@ async def list_tasks(
         ),
     ] = None,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -887,7 +914,7 @@ async def list_tasks(
         column_id=column_id, assigned_to=assigned_to, title=title,
         limit=limit, offset=offset, include_deleted=include_deleted,
         sticker_id=sticker_id, sticker_state_id=sticker_state_id,
-        verbosity=verbosity, workspace=workspace, ctx=ctx,
+        verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1029,6 +1056,7 @@ async def create_task(
 async def get_task(
     task_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -1042,7 +1070,7 @@ async def get_task(
     or extension data (raw TaskDto).
     """
     return await get_task_tool(
-        task_id=task_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        task_id=task_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1068,6 +1096,7 @@ async def get_tasks_by_date(
     completed_only: Annotated[bool, Field(description="Restrict to completed tasks.")] = False,
     limit: Annotated[int, Field(description="Max tasks fetched before client-side filtering.")] = 5000,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1084,7 +1113,7 @@ async def get_tasks_by_date(
     """
     return await get_tasks_by_date_tool(
         assigned_to=assigned_to, created_by=created_by, target_date=target_date,
-        completed_only=completed_only, limit=limit, verbosity=verbosity,
+        completed_only=completed_only, limit=limit, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
     )
 
@@ -1341,6 +1370,7 @@ async def list_string_stickers(
     offset: Annotated[int, Field(description="Page offset.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted stickers.")] = False,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1353,7 +1383,7 @@ async def list_string_stickers(
     """
     return await list_string_stickers_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
-        verbosity=verbosity, workspace=workspace, ctx=ctx,
+        verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1361,6 +1391,7 @@ async def list_string_stickers(
 async def get_string_sticker(
     sticker_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -1371,7 +1402,7 @@ async def get_string_sticker(
     Compact (default) strips the default deleted flag.
     """
     return await get_string_sticker_tool(
-        sticker_id=sticker_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        sticker_id=sticker_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1430,6 +1461,7 @@ async def decode_task_stickers(
 @mcp.tool(annotations=ANN_READ)
 async def list_group_chats(
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1439,7 +1471,7 @@ async def list_group_chats(
     use verbosity="full" if you need permission/role configuration.
     """
     return await list_group_chats_tool(
-        verbosity=verbosity, workspace=workspace, ctx=ctx,
+        verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1482,6 +1514,7 @@ async def create_group_chat(
 async def get_group_chat(
     chat_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -1491,7 +1524,7 @@ async def get_group_chat(
     for permission/role configuration.
     """
     return await get_group_chat_tool(
-        chat_id=chat_id, verbosity=verbosity, workspace=workspace, ctx=ctx,
+        chat_id=chat_id, verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 
@@ -1508,6 +1541,7 @@ async def get_chat_messages(
     ],
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1520,7 +1554,7 @@ async def get_chat_messages(
     RELATED: get_task_comments is an alias for tasks.
     """
     return await get_chat_messages_tool(
-        chat_id=chat_id, limit=limit, verbosity=verbosity,
+        chat_id=chat_id, limit=limit, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
     )
 
@@ -1567,6 +1601,7 @@ async def get_chat_message(
     chat_id: UUIDParam,
     message_id: UUIDParam,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
@@ -1576,7 +1611,7 @@ async def get_chat_message(
     Use verbosity="full" for raw API payload.
     """
     return await get_chat_message_tool(
-        chat_id=chat_id, message_id=message_id, verbosity=verbosity,
+        chat_id=chat_id, message_id=message_id, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
     )
 
@@ -1610,12 +1645,13 @@ async def get_task_comments(
     task_id: UUIDParam,
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List comments on a task (alias for get_chat_messages(chat_id=task_id))."""
     return await get_task_comments_tool(
-        task_id=task_id, limit=limit, verbosity=verbosity,
+        task_id=task_id, limit=limit, verbosity=verbosity, include=include,
         workspace=workspace, ctx=ctx,
     )
 
@@ -1652,6 +1688,7 @@ async def list_webhooks(
     offset: Annotated[int, Field(description="Page offset (client-side).")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted webhooks.")] = False,
     verbosity: VerbosityParam = "compact",
+    include: IncludeParam = None,
     workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
@@ -1664,7 +1701,7 @@ async def list_webhooks(
     """
     return await list_webhooks_tool(
         limit=limit, offset=offset, include_deleted=include_deleted,
-        verbosity=verbosity, workspace=workspace, ctx=ctx,
+        verbosity=verbosity, include=include, workspace=workspace, ctx=ctx,
     )
 
 

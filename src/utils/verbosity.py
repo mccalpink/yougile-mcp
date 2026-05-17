@@ -13,7 +13,7 @@ docs_work/may17/yougile/plan/research/response_verbosity.md §C.2
 
 from typing import Any, Literal
 
-Verbosity = Literal["compact", "full"]
+Verbosity = Literal["custom", "compact", "full"]
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +202,37 @@ _COMPACTORS = {
 
 
 # ---------------------------------------------------------------------------
+# Custom mode helper
+# ---------------------------------------------------------------------------
+
+
+def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
+    """Custom mode: возвращает только id для каждого объекта.
+
+    Параметр include обрабатывается в Task 1.2 (apply_includes).
+    Здесь — базовая реализация без include.
+    """
+    def _strip_to_id(obj: dict) -> dict:
+        if "id" in obj:
+            return {"id": obj["id"]}
+        return obj  # нет id — возвращаем как есть
+
+    if isinstance(data, dict) and "paging" in data and "content" in data:
+        return {
+            "paging": data["paging"],
+            "content": [
+                _strip_to_id(item) if isinstance(item, dict) else item
+                for item in data["content"]
+            ],
+        }
+    if isinstance(data, list):
+        return [_strip_to_id(item) if isinstance(item, dict) else item for item in data]
+    if isinstance(data, dict):
+        return _strip_to_id(data)
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -210,6 +241,7 @@ def apply_verbosity(
     data: Any,
     dto_type: str,
     verbosity: Verbosity = "compact",
+    include: "list[str] | None" = None,
 ) -> Any:
     """Apply verbosity rules to an API response.
 
@@ -239,6 +271,10 @@ def apply_verbosity(
 
     if dto_type not in _COMPACTORS:
         return data  # Unknown DTO — fail open, don't mangle.
+
+    # --- custom: только id, остальное через include[] ---
+    if verbosity == "custom":
+        return _apply_custom(data, dto_type, include)
 
     compactor = _COMPACTORS[dto_type]
 

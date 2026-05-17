@@ -9,7 +9,7 @@
 
 | Параметр | Тип | Default | Описание |
 |---|---|---|---|
-| `workspace` | string | — | Slug из таблицы workspaces. **Обязателен явно.** |
+| `workspace` | string \| None | None | Slug из таблицы workspaces. **Опционален** — тул использует session active или 'default'. Передавай явно только при override. |
 | `verbosity` | "custom"\|"compact"\|"full" | "compact" | Уровень детализации ответа |
 | `include` | list[str] \| None | None | Дополнительные поля через opt-in ключи |
 | `limit` | int | 20 | Размер страницы (max зависит от тула) |
@@ -125,3 +125,23 @@ Core-поля + ISO timestamps + `_hints` о скрытых непустых п�
 - **full ответы и include=["timestamps"]:** `timestamp`, `completedTimestamp`, `archivedTimestamp` — ms epoch (integer)
 - **Запросы (deadline, startDate):** всегда ms epoch
 - **SprintStickerState.begin/end:** **секунды** (не ms) — quirk API, см. quirks.md
+
+---
+
+## Session management
+
+### set_active_workspace
+
+| Поле | Значение |
+|---|---|
+| Когда | Старт сессии или явная смена компании пользователем |
+| Параметры | `slug: str` — slug из настроенных workspaces |
+| Возвращает | `active_workspace`, `available_workspaces`, или `error` если slug не найден |
+
+### get_active_workspace
+
+| Поле | Значение |
+|---|---|
+| Когда | Проверить какой workspace активен, до серии операций |
+| Параметры | нет |
+| Возвращает | `active_workspace` (null если не установлен), `effective_workspace`, `available_workspaces` |

@@ -5,6 +5,49 @@
 
 ---
 
+## Паттерн: Start session → set_active → tools without workspace
+
+```python
+# 1. Установить активный workspace в начале сессии
+set_active_workspace(slug="main")
+
+# 2. Далее все тулы без workspace — используют "main" автоматически
+list_projects()            # → projects из workspace "main"
+list_tasks(column_id=...)  # → tasks из workspace "main"
+create_task(title="...")   # → task в workspace "main"
+```
+
+Когда переключиться:
+```python
+# Пользователь: "покажи задачи клиента ACME"
+set_active_workspace(slug="client_acme")
+list_tasks()  # → tasks из "client_acme"
+```
+
+Вернуться:
+```python
+set_active_workspace(slug="main")
+```
+
+---
+
+## Анти-паттерн: Передавать workspace в каждый вызов
+
+```python
+# Плохо — лишние токены, загромождает контекст
+list_projects(workspace="main")
+list_tasks(workspace="main", column_id=...)
+create_task(workspace="main", title="...")
+
+# Хорошо — установить один раз
+set_active_workspace(slug="main")
+list_projects()
+list_tasks(column_id=...)
+create_task(title="...")
+```
+
+---
+
 ## Pattern 1: Создать задачу в известный проект
 
 **Запрос:** «Создай задачу X в личный проект»

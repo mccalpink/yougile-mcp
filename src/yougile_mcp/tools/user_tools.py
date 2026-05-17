@@ -20,6 +20,7 @@ async def list_users_tool(
     limit: int = 50,
     offset: int = 0,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -52,7 +53,7 @@ async def list_users_tool(
             )
 
         await ctx.info(f"Successfully retrieved {len(result)} users")
-        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity, include=include, is_list=True)
 
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -109,6 +110,7 @@ async def invite_user_tool(
 async def get_user_tool(
     user_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -128,7 +130,7 @@ async def get_user_tool(
             result = await users.get_user(client, user_id)
 
         await ctx.info(f"Successfully retrieved user: {result.get('realName', user_id)}")
-        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity, include=include)
 
     except ValidationError as e:
         await ctx.error(f"Validation failed: {e.message}")
@@ -187,6 +189,7 @@ async def update_user_tool(
 
 async def get_me_tool(
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -211,7 +214,7 @@ async def get_me_tool(
                 f"Successfully retrieved current user: "
                 f"{result.get('realName') or result.get('email') or result.get('id')}"
             )
-        return apply_verbosity(result, dto_type="user", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="user", verbosity=verbosity, include=include)
 
     except YouGileError as e:
         if ctx:

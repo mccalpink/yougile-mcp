@@ -31,11 +31,16 @@ async def list_users_tool(
         project_id: Filter to users belonging to this project (server-side).
         limit: Page size (default 50, max 1000).
         offset: Page offset (default 0).
-        verbosity: 'compact' (default) keeps only id/email/realName;
+        verbosity: 'compact' (default) keeps only id/email/realName/status;
                    'full' returns the raw API payload (status, lastActivity, isAdmin).
 
     NOTE: YouGile /users does not expose includeDeleted; deleted users are
     never returned via this endpoint.
+
+    RETURNS:
+      compact (default): {id, email, realName, status} per user.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info("Fetching users from YouGile...")
@@ -118,8 +123,13 @@ async def get_user_tool(
 
     Args:
         user_id: User UUID.
-        verbosity: 'compact' (default) keeps only id/email/realName;
+        verbosity: 'compact' (default) keeps only id/email/realName/status;
                    'full' returns raw API payload (status, lastActivity, isAdmin).
+
+    RETURNS:
+      compact (default): {id, email, realName, status}.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching user details: {user_id}")
@@ -199,8 +209,13 @@ async def get_me_tool(
     by `assigned_to=<me>` or `created_by=<me>`).
 
     Args:
-        verbosity: 'compact' (default) keeps only id/email/realName;
+        verbosity: 'compact' (default) keeps only id/email/realName/status;
                    'full' returns raw API payload (status, lastActivity, isAdmin).
+
+    RETURNS:
+      compact (default): {id, email, realName, status}.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         if ctx:

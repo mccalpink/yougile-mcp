@@ -190,6 +190,8 @@ _SCHEMA: dict[str, dict] = {
             "SprintStickerState.begin/end stored in seconds, not ms like other time fields. "
             "normalize_sprint_sticker_state() auto-converts.",
             "limit and offset fields appear in sticker list responses (OpenAPI codegen artifact) — always dropped.",
+            "Sprint vs string sticker: используй поле 'type' чтобы определить какой include_key валиден. "
+            "'sprint' → include=['sprint_states'], 'string' → include=['string_states'].",
         ],
         "heavy_fields_warning": None,
     },

@@ -357,7 +357,7 @@ async def set_active_workspace(
             "hint": f"Настройте YOUGILE_KEY_{slug.upper()}=... в .env и перезапустите сервер.",
         }
     if ctx is not None:
-        set_active(id(ctx.session), slug)
+        set_active(ctx.session, slug)
     return {
         "active_workspace": slug,
         "session_id": id(ctx.session) if ctx else None,
@@ -383,7 +383,7 @@ async def get_active_workspace(ctx: Context = None) -> dict:
     fallback на 'default'), available_workspaces (все настроенные slug'ы).
     """
     available = registry.slugs()
-    active = get_active(id(ctx.session)) if ctx is not None else None
+    active = get_active(ctx.session) if ctx is not None else None
     effective = active if active is not None else "default"
     return {
         "active_workspace": active,

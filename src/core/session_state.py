@@ -1,34 +1,38 @@
 """
 Хранилище per-session активных workspace'ов.
 
-Ключ: id(ctx.session) — Python id объекта ServerSession (уникален per-connection).
+Ключ: объект ServerSession (или любой weakref-compatible объект).
 Значение: slug активного workspace (строка).
+
+Использует WeakKeyDictionary — при GC сессии запись удаляется автоматически,
+исключая утечку состояния при переиспользовании id() Python'ом.
 
 Не персистентен — только на время жизни процесса.
 """
 import threading
+import weakref
 from typing import Optional
 
 _lock = threading.Lock()
-_state: dict[int, str] = {}
+_state: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
-def get_active(session_id: int) -> Optional[str]:
+def get_active(session_obj) -> Optional[str]:
     """Возвращает активный workspace slug или None если не установлен."""
     with _lock:
-        return _state.get(session_id)
+        return _state.get(session_obj)
 
 
-def set_active(session_id: int, slug: str) -> None:
+def set_active(session_obj, slug: str) -> None:
     """Сохраняет активный workspace slug для данной сессии."""
     with _lock:
-        _state[session_id] = slug
+        _state[session_obj] = slug
 
 
-def clear_active(session_id: int) -> None:
+def clear_active(session_obj) -> None:
     """Удаляет запись для сессии (idempotent — не бросает если нет)."""
     with _lock:
-        _state.pop(session_id, None)
+        _state.pop(session_obj, None)
 
 
 def resolve_workspace(
@@ -41,7 +45,7 @@ def resolve_workspace(
 
     Приоритет:
     1. Явный workspace (не None) → используем его (backward compat).
-    2. Session active workspace (из id(ctx.session)) → если установлен.
+    2. Session active workspace (из ctx.session объекта) → если установлен.
     3. "default" — fallback.
 
     Бросает WorkspaceNotConfiguredError если итоговый slug не зарегистрирован.
@@ -51,7 +55,7 @@ def resolve_workspace(
     if workspace is not None:
         effective = workspace
     elif ctx is not None:
-        session_active = get_active(id(ctx.session))
+        session_active = get_active(ctx.session)
         effective = session_active if session_active is not None else "default"
     else:
         effective = "default"

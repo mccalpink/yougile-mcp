@@ -17,6 +17,11 @@ class FakeRegistry:
         return self._slugs
 
 
+class FakeSession:
+    """Fake-сессия, поддерживающая weakref."""
+    pass
+
+
 class TestBackwardCompat:
     def setup_method(self):
         self.registry = FakeRegistry(["default", "main", "team"])
@@ -27,38 +32,38 @@ class TestBackwardCompat:
 
     def test_explicit_workspace_overrides_session_active(self):
         """workspace="team" при session active="main" → возвращает "team"."""
-        session_obj = object()
-        set_active(id(session_obj), "main")
+        session_obj = FakeSession()
+        set_active(session_obj, "main")
         ctx = MagicMock()
         ctx.session = session_obj
         result = resolve_workspace("team", ctx, self.registry)
         assert result == "team"
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_explicit_default_overrides_session_active(self):
         """workspace="default" при session active="main" → возвращает "default"."""
-        session_obj = object()
-        set_active(id(session_obj), "main")
+        session_obj = FakeSession()
+        set_active(session_obj, "main")
         ctx = MagicMock()
         ctx.session = session_obj
         result = resolve_workspace("default", ctx, self.registry)
         assert result == "default"
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_none_workspace_with_session_active_uses_active(self):
         """workspace=None при session active="team" → возвращает "team"."""
-        session_obj = object()
-        set_active(id(session_obj), "team")
+        session_obj = FakeSession()
+        set_active(session_obj, "team")
         ctx = MagicMock()
         ctx.session = session_obj
         result = resolve_workspace(None, ctx, self.registry)
         assert result == "team"
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_none_workspace_no_session_uses_default(self):
         """workspace=None без session active → возвращает "default"."""
         ctx = MagicMock()
-        ctx.session = object()  # нет set_active для этого id
+        ctx.session = FakeSession()  # нет set_active для этого объекта
         result = resolve_workspace(None, ctx, self.registry)
         assert result == "default"
 

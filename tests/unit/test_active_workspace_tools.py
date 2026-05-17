@@ -4,9 +4,14 @@ from unittest.mock import MagicMock, patch
 from src.core.session_state import get_active, clear_active
 
 
+class FakeSession:
+    """Fake-сессия, поддерживающая weakref (встроенный object() его не поддерживает)."""
+    pass
+
+
 def make_ctx(session_obj=None):
     ctx = MagicMock()
-    ctx.session = session_obj or object()
+    ctx.session = session_obj if session_obj is not None else FakeSession()
     return ctx
 
 
@@ -34,7 +39,7 @@ class TestSetActiveWorkspace:
         """Вызов set_active_workspace('main') → возвращает dict с active_workspace."""
         import asyncio
         from src.server import mcp
-        session_obj = object()
+        session_obj = FakeSession()
         ctx = make_ctx(session_obj)
         tools = mcp._tool_manager._tools
         fn = tools['set_active_workspace'].fn
@@ -46,11 +51,11 @@ class TestSetActiveWorkspace:
         """После вызова session state содержит slug."""
         import asyncio
         from src.server import mcp
-        session_obj = object()
+        session_obj = FakeSession()
         ctx = make_ctx(session_obj)
         fn = mcp._tool_manager._tools['set_active_workspace'].fn
         asyncio.get_event_loop().run_until_complete(fn(slug="team", ctx=ctx))
-        assert get_active(id(session_obj)) == "team"
+        assert get_active(session_obj) == "team"
 
     def test_set_active_invalid_slug_returns_error(self, patch_registry):
         """Несуществующий slug → ответ содержит error."""
@@ -100,7 +105,7 @@ class TestGetActiveWorkspace:
         """После set_active — возвращает установленный slug."""
         import asyncio
         from src.server import mcp
-        session_obj = object()
+        session_obj = FakeSession()
         ctx = make_ctx(session_obj)
         # Установить через set_active_workspace
         set_fn = mcp._tool_manager._tools['set_active_workspace'].fn

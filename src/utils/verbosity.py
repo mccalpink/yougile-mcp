@@ -37,7 +37,7 @@ def iso_from_ms(ms: "int | None") -> "str | None":
 # ---------------------------------------------------------------------------
 
 
-def _compact_task(task: dict) -> tuple[dict, list[str]]:
+def _compact_task(task: dict, is_list: bool = False) -> tuple[dict, list[str]]:
     """Drop noisy fields from a task dict. Returns (compacted, omitted_paths)."""
     out = dict(task)
     omitted: list[str] = []
@@ -104,6 +104,11 @@ def _compact_task(task: dict) -> tuple[dict, list[str]]:
         del out["timer"]
         omitted.append("timer")
 
+    # В list_* режиме description дропается всегда (тяжёлое поле, есть _hints.has_description)
+    if is_list and "description" in out:
+        del out["description"]
+        omitted.append("description")
+
     # Trim nested deadline: drop history/blockedPoints/links inside it
     if "deadline" in out and isinstance(out["deadline"], dict):
         deadline = dict(out["deadline"])
@@ -120,6 +125,9 @@ def _compact_project(project: dict) -> tuple[dict, list[str]]:
     """Drop timestamps and users-role map from a project dict."""
     out = dict(project)
     omitted: list[str] = []
+    # ISO timestamp
+    if out.get("timestamp"):
+        out["createdAt"] = iso_from_ms(out["timestamp"])
     for k in ("timestamp", "users"):
         if k in out:
             del out[k]
@@ -150,8 +158,8 @@ def _compact_column(column: dict) -> tuple[dict, list[str]]:
 
 
 def _compact_user(user: dict) -> tuple[dict, list[str]]:
-    """Keep only id, email, realName."""
-    KEEP = {"id", "email", "realName"}
+    """Keep only id, email, realName, status."""
+    KEEP = {"id", "email", "realName", "status"}
     out = {k: v for k, v in user.items() if k in KEEP}
     omitted = [k for k in user.keys() if k not in KEEP]
     return out, omitted
@@ -189,6 +197,15 @@ def _compact_group_chat(chat: dict) -> tuple[dict, list[str]]:
 def _compact_sticker(sticker: dict) -> tuple[dict, list[str]]:
     out = dict(sticker)
     omitted: list[str] = []
+    # states — opt-in (sprint_states/string_states через include[])
+    if "states" in out:
+        del out["states"]
+        omitted.append("states")
+    # Артефакты пагинации
+    for k in ("limit", "offset"):
+        if k in out:
+            del out[k]
+            omitted.append(k)
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
         omitted.append("deleted")
@@ -434,7 +451,7 @@ def apply_verbosity(
         all_omitted: set[str] = set()
         for item in data["content"]:
             if isinstance(item, dict):
-                c, omitted = compactor(item)
+                c, omitted = compactor(item, is_list=True) if dto_type == "task" else compactor(item)
                 if is_list:
                     hints = build_hints(item, dto_type)  # строим по СЫРОМУ item
                     if hints is not None:

@@ -75,20 +75,20 @@ pip install -r requirements.txt
 
 Используйте аналогичную конфигурацию для Continue, Cline и других MCP-совместимых помощников.
 
-## HTTP transport (multi-client setup)
+<!-- [наша секция] -->
+## HTTP transport (многопользовательский режим)
 
-Running stdio per Claude/Cursor session costs ~90 MB each. For 5+
-concurrent sessions, run one long-lived HTTP server and point every
-client at its URL:
+Запуск stdio на каждую сессию Claude/Cursor стоит ~90 МБ. При 5+ сессиях
+одновременно — запустите один долгоживущий HTTP-сервер и подключите к нему всех:
 
     YOUGILE_TRANSPORT=http python run_server.py
-    # or
+    # или
     python run_server.py --http
 
-Defaults: `127.0.0.1:3000/mcp` (override via `YOUGILE_HOST`,
+По умолчанию: `127.0.0.1:3000/mcp` (переопределяется через `YOUGILE_HOST`,
 `YOUGILE_PORT`, `YOUGILE_HTTP_PATH`).
 
-MCP client config:
+Конфигурация MCP-клиента:
 
 ```json
 {
@@ -97,74 +97,124 @@ MCP client config:
   }
 }
 ```
+<!-- [/наша секция] -->
 
-## Multi-tenant workspaces
+<!-- [наша секция] -->
+## Несколько компаний (multi-tenant)
 
-One MCP server can hold API keys for multiple YouGile companies. Add
-one env var per company:
+Один MCP-сервер может хранить API-ключи для нескольких YouGile-компаний.
+Добавьте по одной env-переменной на компанию:
 
-    YOUGILE_KEY_MAIN=xxx           # required, defines workspace 'main'
-    YOUGILE_LABEL_MAIN="Личная"     # optional, human-readable label
-    YOUGILE_COMPANY_MAIN=<uuid>     # optional, for /auth/* re-init
+    YOUGILE_KEY_MAIN=xxx           # обязательно, определяет воркспейс 'main'
+    YOUGILE_LABEL_MAIN="Личная"    # опционально, человекочитаемое название
+    YOUGILE_COMPANY_MAIN=<uuid>    # опционально, для /auth/* переинициализации
 
     YOUGILE_KEY_TEAM=yyy
     YOUGILE_LABEL_TEAM="Стартап X"
 
-Every data tool takes a `workspace` parameter (default `"default"`).
-Use `list_workspaces` from the LLM to discover configured slugs.
+Каждый тул принимает параметр `workspace` (по умолчанию `"default"`).
+Используйте `list_workspaces` для получения доступных слагов.
 
-The legacy single-tenant `YOUGILE_API_KEY` (+ optional
-`YOUGILE_COMPANY_ID`) still works — it's mapped to slug `default`.
+Устаревший формат `YOUGILE_API_KEY` (+ `YOUGILE_COMPANY_ID`) по-прежнему работает
+и маппится на слаг `default`.
+<!-- [/наша секция] -->
 
-## Security note: upload_file path allowlist
+<!-- [наша секция] -->
+## Безопасность: ограничения upload_file
 
-`upload_file` can read any file on the server filesystem. To prevent
-agents from exfiltrating `.env`, SSH keys, or other secrets, paths
-are restricted by default to the user's home directory (`~/`).
-Override with:
+`upload_file` может читать любой файл на сервере. Чтобы агенты не могли
+exfiltrate `.env`, SSH-ключи и другие секреты, пути ограничены домашней
+директорией (`~/`) по умолчанию. Переопределить:
 
     YOUGILE_UPLOAD_ROOTS=/srv/data:/var/uploads
 
-Dotfiles and paths matching `credentials`, `secret`, `password`,
-`.env`, `.ssh`, `private_key` (case-insensitive) are always blocked.
+Dotfiles и пути, содержащие `credentials`, `secret`, `password`, `.env`,
+`.ssh`, `private_key` (без учёта регистра), всегда заблокированы.
+<!-- [/наша секция] -->
 
-## Response verbosity
+<!-- [наша секция] -->
+## Управление verbosity ответов
 
-Read tools (`list_*`, `get_*`) default to `verbosity="compact"` — they strip
-timestamps, internal IDs, and empty fields to save tokens (~37% on a
-typical session, up to 60% on `list_projects`). When something is dropped,
-the response includes a `_meta.omitted_fields` block so the agent knows
-what to ask for if it needs the full data:
+Все read-тулы (`list_*`, `get_*`) принимают параметр `verbosity`:
 
-```json
-{
-  "_meta": {
-    "verbosity": "compact",
-    "omitted_fields": ["timestamp", "createdBy", "idTaskCommon", ...],
-    "hint": "Pass verbosity='full' to include all fields"
-  },
-  "id": "...",
-  "title": "...",
-  ...
-}
+| Уровень | Поведение | Когда использовать |
+|---|---|---|
+| `custom` | Только `id`. Остальные поля — явно через `include[]` | Агрегации, подсчёты — минимум токенов |
+| `compact` | Core-поля + дешёвые derived-поля + `_hints` о скрытых данных | **По умолчанию.** Стандартная работа |
+| `full` | Все поля DTO кроме opt-in (история, raw timestamps) | Отладка, аудит, полный просмотр |
+
+Параметр `include[]` добавляет конкретные поля или группы полей:
+
+```python
+# Только ID — для подсчёта completed/not completed
+list_tasks(verbosity="custom", include=["completed"])
+
+# Compact + описание (description обычно выключен в list_*)
+list_tasks(verbosity="compact", include=["description"])
+
+# Compact + история дедлайна + raw timestamps
+get_task(task_id="...", verbosity="compact", include=["deadline_history", "timestamps"])
 ```
 
-Pass `verbosity="full"` on any read tool to bypass pruning and get the
-raw API response (useful for debugging audit history, exact timestamps,
-or accessing extension data).
+Полный каталог доступных полей и include-ключей — через тул `describe_response`:
 
-Tools without a `verbosity` parameter return minimal payloads already
-(`get_string_sticker_state`, `get_sprint_sticker_state`,
-`get_task_chat_subscribers`, `decode_task_stickers`) or are write
-operations (`create_*`, `update_*`, `delete_*`, `send_*`).
+```python
+# Обзор всех сущностей
+describe_response()
 
-## Personal Claude skill
+# Детальная схема task: типы, verbosity-уровни, include-ключи, quirks
+describe_response(entity="task", verbosity="full")
+```
 
-A starter skill that pairs with this MCP lives at
-`templates/yougile-personal-skill/`. Copy `SKILL.md` to
-`~/.claude/skills/yougile-personal/SKILL.md` and fill the
-placeholders to give Claude per-session context (workspace slugs,
-project shortcuts, sticker maps).
+Когда поля опущены в compact, ответ содержит `_meta.omitted_fields` и `_hints`:
+```json
+{
+  "_meta": {"verbosity": "compact", "omitted_fields": ["createdBy", "extensionData"]},
+  "content": [
+    {"id": "...", "title": "...", "_hints": {"has_description": true, "has_checklists": false}}
+  ]
+}
+```
+<!-- [/наша секция] -->
+
+<!-- [наша секция] -->
+## Персональный скилл для Claude
+
+Шаблон скилла, парный к этому MCP, находится в
+`templates/yougile-personal-skill/`. Скилл даёт Claude per-session контекст:
+слаги воркспейсов, UUID проектов, шорткаты стикеров, routing rules.
+
+**Без скилла:** Claude делает 2-3 лишних API-вызова на каждый запрос (lookup
+проектов, досок, колонок). **Со скиллом:** UUID уже в контексте → напрямую к делу.
+
+### Быстрый старт
+
+```bash
+# Инициализировать персональный брифинг через MCP:
+setup_yougile_skill
+
+# Или прочитать шаблон перед началом:
+# resource: yougile://skill-template
+```
+
+Тул `setup_yougile_skill` задаёт 6 вопросов (воркспейсы, проекты,
+routing rules, anti-patterns) и генерирует `briefing.md` по адресу
+`~/.agents/skills/yougile-personal/briefing.md`.
+
+### Ручная установка
+
+Если хотите заполнить шаблон вручную:
+1. Скопируйте `templates/yougile-personal-skill/SKILL.md` в
+   `~/.claude/skills/yougile-personal/SKILL.md`
+2. Заполните плейсхолдеры (workspace slugs, UUID проектов, routing rules)
+3. При следующей сессии Claude подхватит скилл автоматически
+
+### Обновление
+
+Обновляйте `briefing.md` при смене workspace, добавлении новых проектов
+или изменении routing rules. Запустите `setup_yougile_skill` повторно
+или отредактируйте файл вручную.
+<!-- [/наша секция] -->
 
 ## 🎯 Как использовать с AI помощником
 

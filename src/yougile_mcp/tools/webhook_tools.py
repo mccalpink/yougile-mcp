@@ -71,6 +71,12 @@ async def list_webhooks_tool(
     Args:
         verbosity: 'compact' (default) drops lastSuccess/failuresSinceLastSuccess;
                    'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, url, event, filters, enabled} per webhook.
+        lastSuccess/failuresSinceLastSuccess dropped.
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         if ctx:

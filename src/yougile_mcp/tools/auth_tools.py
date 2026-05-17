@@ -172,27 +172,33 @@ async def list_api_keys_tool(
     company_id: str = None,
     ctx: Context = None
 ) -> List[Dict[str, Any]]:
-    """Get list of existing API keys for the user."""
+    """Get list of existing API keys for the user.
+
+    Returns metadata for each API key (id, preview, timestamps). The full key
+    value is NOT returned — use the key from create_api_key when it's freshly
+    generated.
+    """
     try:
         await ctx.info("📋 Fetching API keys...")
-        
+
         # Validate inputs
         email = validate_email(login)
         if company_id:
             company_id = validate_uuid(company_id, "company_id")
-        
+
         # Create temporary client for authentication
         temp_auth_manager = AuthManager()
         async with YouGileClient(temp_auth_manager) as client:
             keys_data = await auth_api.get_api_keys(client, email, password, company_id)
-            
+
         await ctx.info(f"✅ Found {len(keys_data)} API keys")
-        
-        # Add key preview (first 10 chars + "...")
+
+        # Add preview but strip the full secret before returning.
         for key_info in keys_data:
             if 'key' in key_info:
                 key_info['key_preview'] = key_info['key'][:10] + "..."
-        
+                del key_info['key']
+
         return keys_data
         
     except Exception as e:

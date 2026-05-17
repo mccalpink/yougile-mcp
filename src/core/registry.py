@@ -128,14 +128,19 @@ class AuthRegistry:
             if m := _KEY_RE.match(name):
                 slug = m.group(1).lower()
                 if slug in self._managers:
-                    # duplicate env var (case-collision); keep first, warn via stderr
-                    import sys
-                    print(
-                        f"[yougile-mcp] WARNING: duplicate workspace slug "
-                        f"'{slug}' from env var {name}; ignored",
-                        file=sys.stderr,
+                    # Case-collision is a configuration bug — silently dropping
+                    # one of the keys would route tool calls to the wrong
+                    # company. Fail loud at startup instead.
+                    collisions = [
+                        n for n in env.keys()
+                        if _KEY_RE.match(n) and _KEY_RE.match(n).group(1).lower() == slug
+                    ]
+                    raise ValueError(
+                        f"Duplicate workspace slug '{slug}' from env vars "
+                        f"{sorted(collisions)}. Slug comparison is "
+                        f"case-insensitive — rename one of the env vars "
+                        f"to avoid silent routing to the wrong company."
                     )
-                    continue
                 self._managers[slug] = AuthManager(api_key=value.strip())
             elif m := _LABEL_RE.match(name):
                 labels[m.group(1).lower()] = value.strip()

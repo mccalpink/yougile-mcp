@@ -8,12 +8,24 @@ Subscriptions to company events (3 endpoints):
 """
 
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
 from mcp.server.fastmcp import Context
 from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import webhooks
 from ...utils.validation import validate_uuid, validate_non_empty_string
+
+
+def _redact_url(url: str) -> str:
+    """Strip path/query/fragment so signed-URL tokens never reach the log."""
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return "<invalid-url>"
+        return f"{parsed.scheme}://{parsed.netloc}/..."
+    except Exception:
+        return "<unparseable-url>"
 
 
 def _validate_filters(filters: Any, field: str = "filters") -> List[Dict[str, Any]]:
@@ -93,6 +105,7 @@ async def create_webhook_tool(
     url: str,
     event: str,
     filters: Optional[List[Dict[str, Any]]] = None,
+    allow_unfiltered: bool = False,
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a webhook subscription.
@@ -101,17 +114,31 @@ async def create_webhook_tool(
         workspace: workspace slug.
         url: target URL that will receive the event POST.
         event: subscription event, e.g. "task-created", "task-*", ".*".
-        filters: optional extra filters (location/title/chat_message). Pass an
-            empty list to subscribe without filters — YouGile requires the field
-            to be present.
+        filters: list of {name, value} filters narrowing the scope. If empty
+            or None, the call fails unless `allow_unfiltered=True` — this
+            guards against accidentally creating a firehose webhook that
+            receives every event in the company.
+        allow_unfiltered: pass True only when you explicitly want a
+            company-wide firehose subscription. Default False.
     """
     try:
-        if ctx:
-            await ctx.info(f"Creating webhook for event '{event}' -> {url}")
-
         url = validate_non_empty_string(url, "url")
         event = validate_non_empty_string(event, "event")
         filters = _validate_filters(filters)
+
+        if len(filters) == 0 and not allow_unfiltered:
+            raise ValidationError(
+                "filters is empty — this would create a firehose webhook "
+                "for the entire company. If you really want that, pass "
+                "allow_unfiltered=True explicitly.",
+                field="filters",
+            )
+
+        if ctx:
+            await ctx.info(
+                f"Creating webhook for {_redact_url(url)}, event={event}, "
+                f"filters={len(filters)}"
+            )
 
         payload: Dict[str, Any] = {
             "url": url,
@@ -164,6 +191,8 @@ async def update_webhook_tool(
         payload: Dict[str, Any] = {}
         if url is not None:
             payload["url"] = validate_non_empty_string(url, "url")
+            if ctx:
+                await ctx.debug(f"  new url: {_redact_url(payload['url'])}")
         if event is not None:
             payload["event"] = validate_non_empty_string(event, "event")
         if filters is not None:

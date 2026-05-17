@@ -38,7 +38,13 @@ class YouGileClient:
             await self._client.aclose()
     
     async def _auto_reinitialize(self):
-        """Automatically reinitialize authentication if possible."""
+        """Automatically reinitialize authentication if possible.
+
+        Refreshes the legacy single-tenant credentials and propagates them to
+        both the local AuthManager (so the current request can proceed) and
+        the multi-tenant registry under the `default` slug (so subsequent
+        tool calls that look up workspace='default' see the new key too).
+        """
         if all([settings.yougile_email, settings.yougile_password, settings.yougile_company_id]):
             # Import here to avoid circular imports
             from .. import server
@@ -47,9 +53,21 @@ class YouGileClient:
             # Update local auth_manager with global credentials
             if auth.auth_manager.is_authenticated():
                 self.auth_manager.set_credentials(
-                    auth.auth_manager.api_key, 
+                    auth.auth_manager.api_key,
                     auth.auth_manager.company_id
                 )
+                # initialize_auth() already mirrors into the registry on
+                # success; this is a defensive safety net in case the
+                # control flow ever changes.
+                try:
+                    server._mirror_legacy_into_registry(
+                        auth.auth_manager.api_key,
+                        auth.auth_manager.company_id,
+                    )
+                except Exception:
+                    # Mirroring is best-effort here; failure must not abort
+                    # the in-flight request.
+                    pass
     
     async def request(
         self,

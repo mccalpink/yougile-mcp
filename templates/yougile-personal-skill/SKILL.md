@@ -138,13 +138,15 @@ These are non-negotiable defaults for this user.
 
 ## Style — how this user wants you to behave
 
+<!-- FILL: free-form description of how you want the assistant to talk to you. -->
+
 (Pre-filled defaults; edit to match.)
 
 - Russian-language conversation. Technical identifiers (UUIDs, tool names, field names) stay in English.
 - Short paragraphs, tables and lists. **Bold** for the key fact.
 - Always explain "why", not just "how". One sentence is enough.
 - When multiple ways exist, list them with trade-offs; don't pick silently.
-- This user (ADHD + OCD profile) benefits from explicit structure and stated intent before each action. Don't batch surprises.
+- This is a placeholder for personal communication preferences. Replace with whatever helps the assistant match your style: terseness, verbosity, confirmation thresholds, preferred language for chit-chat vs technical.
 
 ---
 

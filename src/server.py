@@ -265,7 +265,10 @@ async def list_workspaces(ctx: Context = None) -> list[dict]:
 
     USE WHEN: starting any flow that needs a workspace slug, when you are
     unsure which slug the user means, or to verify a slug is configured.
-    RETURNS: list of {slug, company_id, label} — never returns API keys.
+    RETURNS: list of {slug, label, has_company_id} — `label` falls back to
+    the slug if YOUGILE_LABEL_<SLUG> is unset; `has_company_id` is True
+    when YOUGILE_COMPANY_<SLUG> is configured (needed for auth re-init).
+    Never returns API keys.
     RELATED: every other tool accepts the returned slug as `workspace`.
     """
     from .core import registry as _registry
@@ -1419,19 +1422,34 @@ async def create_webhook(
             description=(
                 "List of {name, value} filters narrowing the scope (e.g. "
                 "[{'name': 'location', 'value': ['<board_uuid>']}]). REQUIRED "
-                "by API even if empty — pass [] for no filtering, but expect "
-                "very high traffic without filters."
+                "by API even if empty. Passing an empty list (or omitting it) "
+                "is now REJECTED unless you also pass allow_unfiltered=True — "
+                "this guard prevents accidental firehose subscriptions."
             ),
         ),
     ] = None,
+    allow_unfiltered: Annotated[
+        bool,
+        Field(
+            description=(
+                "Explicit opt-in for a company-wide firehose webhook (no "
+                "filters). Default False. Set True only when you really want "
+                "to receive every event in the company."
+            ),
+        ),
+    ] = False,
     ctx: Context = None,
 ) -> dict:
     """Create a webhook subscription.
 
     BEST PRACTICE: always pass `filters` — an unfiltered webhook fires on
-    every event in the company.
+    every event in the company and will rate-limit quickly.
+
+    If you really do want a firehose, set `allow_unfiltered=True` explicitly.
     """
-    return await create_webhook_tool(workspace, url, event, filters or [], ctx)
+    return await create_webhook_tool(
+        workspace, url, event, filters or [], allow_unfiltered, ctx
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
@@ -1628,6 +1646,27 @@ def sprint_retrospective(sprint_end_date: str, team_user_ids: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _mirror_legacy_into_registry(api_key: str, company_id: str) -> None:
+    """Inject the legacy single-tenant credentials into the AuthRegistry
+    under the `default` slug so multi-tenant tools (which all route through
+    `registry.get(workspace)`) can serve calls with workspace="default"
+    even when the user is on the legacy email/password bootstrap path.
+
+    This is intentionally a direct mutation of the registry — there is no
+    public `add` method because workspaces normally come from env at startup,
+    but the legacy flow obtains its key at runtime.
+    """
+    from .core.registry import registry as _registry, LEGACY_SLUG
+    from .core.auth import AuthManager as _AuthManager
+    if not _registry.has(LEGACY_SLUG):
+        mgr = _AuthManager(api_key=api_key)
+        mgr.set_credentials(api_key, company_id)
+        _registry._managers[LEGACY_SLUG] = mgr
+    else:
+        # Refresh credentials on the existing entry so a rotated key wins.
+        _registry.get(LEGACY_SLUG).set_credentials(api_key, company_id)
+
+
 async def initialize_auth():
     """Initialize authentication from environment variables (single-tenant fallback)."""
     if not all([settings.yougile_email, settings.yougile_password, settings.yougile_company_id]):
@@ -1643,6 +1682,7 @@ async def initialize_auth():
                 auth.auth_manager.set_credentials(api_key_to_test, settings.yougile_company_id)
                 async with YouGileClient(auth.auth_manager) as client:
                     await client.get("/users")
+                _mirror_legacy_into_registry(api_key_to_test, settings.yougile_company_id)
                 return True
             except Exception:
                 pass
@@ -1658,6 +1698,7 @@ async def initialize_auth():
             auth.auth_manager.set_credentials(api_key, settings.yougile_company_id)
             await save_api_key_to_credentials(api_key)
 
+        _mirror_legacy_into_registry(api_key, settings.yougile_company_id)
         return True
 
     except Exception:

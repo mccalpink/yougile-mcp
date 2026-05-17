@@ -18,6 +18,7 @@ async def list_string_stickers_tool(
     offset: int = 0,
     include_deleted: bool = False,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -38,7 +39,7 @@ async def list_string_stickers_tool(
 
         if ctx:
             await ctx.info(f"Successfully retrieved {len(sticker_list)} string stickers")
-        return apply_verbosity(sticker_list, dto_type="sticker", verbosity=verbosity)
+        return apply_verbosity(sticker_list, dto_type="sticker", verbosity=verbosity, include=include, is_list=True)
         
     except YouGileError as e:
         if ctx:
@@ -53,6 +54,7 @@ async def list_string_stickers_tool(
 async def get_string_sticker_tool(
     sticker_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -73,7 +75,7 @@ async def get_string_sticker_tool(
 
         if ctx:
             await ctx.info(f"Successfully retrieved sticker: {result.get('name', sticker_id)}")
-        return apply_verbosity(result, dto_type="sticker", verbosity=verbosity)
+        return apply_verbosity(result, dto_type="sticker", verbosity=verbosity, include=include)
         
     except ValidationError as e:
         if ctx:

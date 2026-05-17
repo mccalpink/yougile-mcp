@@ -22,9 +22,11 @@ async def list_projects_tool(
 ) -> List[Dict[str, Any]]:
     """Get list of all projects in the company.
 
-    Args:
-        verbosity: 'compact' (default) strips users-role map and timestamp;
-                   'full' returns raw API payload.
+    RETURNS:
+      compact (default): {id, title, createdAt (ISO)}.
+        _meta.omitted_fields lists what was dropped (users map, raw timestamp).
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info("Fetching projects from YouGile...")
@@ -104,8 +106,12 @@ async def get_project_tool(
 
     Args:
         project_id: Project UUID.
-        verbosity: 'compact' (default) strips timestamp and the users-role map;
-                   'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, createdAt (ISO)}.
+        _meta.omitted_fields lists what was dropped (users map, raw timestamp).
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching project details: {project_id}")

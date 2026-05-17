@@ -24,8 +24,11 @@ async def list_string_stickers_tool(
 ) -> List[Dict[str, Any]]:
     """Get list of string (custom) stickers with their basic information.
 
-    Args:
-        verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+    RETURNS:
+      compact (default): {id, name, type, icon} per sticker.
+        states dropped (opt-in via include=['string_states']).
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         if ctx:
@@ -63,6 +66,12 @@ async def get_string_sticker_tool(
     Args:
         sticker_id: Sticker UUID.
         verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, name, type, icon}.
+        states dropped (opt-in via include=['string_states']).
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload (includes states array).
     """
     try:
         if ctx:

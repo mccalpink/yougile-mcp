@@ -103,6 +103,7 @@ from .yougile_mcp.resources.api_docs import (
     get_api_overview,
     get_html_guide,
 )
+from .yougile_mcp.tools.meta_tools import describe_response_impl, setup_yougile_skill_impl
 from .yougile_mcp.prompts.workflow_prompts import (
     create_task_workflow_prompt,
     daily_standup_prompt,
@@ -336,6 +337,82 @@ async def get_user_context(ctx: Context = None) -> str:
         if ctx:
             await ctx.error(f"Error retrieving user context: {exc}")
         return "Error retrieving user context settings."
+
+
+# ---------------------------------------------------------------------------
+# Meta / introspection
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=ANN_READ)
+async def describe_response(
+    entity: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Entity name (case-insensitive). One of: task, project, board, "
+                "column, user, message, group_chat, sticker, webhook. "
+                "Omit to get overview of all entities."
+            ),
+            examples=["task", "project", "webhook"],
+        ),
+    ] = None,
+    verbosity: Annotated[
+        Literal["compact", "full"],
+        Field(
+            description=(
+                "'compact' shows only fields present in compact responses; "
+                "'full' shows all fields including opt-in ones."
+            ),
+        ),
+    ] = "compact",
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> dict:
+    """Return the response schema for a YouGile entity type.
+
+    USE WHEN: You need to know which fields are available, which verbosity level
+    includes them, or which include[] key to use for opt-in fields.
+    Call BEFORE constructing an unusual field request — saves round-trips.
+
+    DO NOT USE: For standard CRUD operations where fields are well-known.
+
+    RETURNS: Without entity — overview of all 9 entities with field counts.
+    With entity — field-level schema with types, verbosity levels, include keys, quirks.
+
+    RELATED: All list_* and get_* tools accept verbosity and include[] parameters.
+    """
+    return await describe_response_impl(entity=entity, verbosity=verbosity)
+
+
+@mcp.tool(annotations=ANN_READ)
+async def setup_yougile_skill(
+    memory_dir: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Override path for briefing.md. "
+                "Default: ~/.agents/skills/yougile-personal/briefing.md. "
+                "Set YOUGILE_USER_MEMORY_DIR env var to make the override permanent."
+            ),
+            examples=["~/.agents/skills/yougile-personal", "/custom/path"],
+        ),
+    ] = None,
+    workspace: WorkspaceParam = "default",
+    ctx: Context = None,
+) -> dict:
+    """Guide interactive setup of the yougile-personal SKILL.
+
+    USE WHEN: User asks to 'configure skill', 'setup yougile', or briefing.md is missing.
+
+    DO NOT USE: If briefing.md already exists and user hasn't asked to reconfigure.
+
+    RETURNS: List of questions to ask the user + target path for briefing.md.
+    After collecting answers — call list_projects to resolve UUIDs, then write briefing.md.
+
+    RELATED: Resource yougile://skill-template — shows the SKILL.md template structure.
+    """
+    return await setup_yougile_skill_impl(memory_dir=memory_dir)
 
 
 # ---------------------------------------------------------------------------

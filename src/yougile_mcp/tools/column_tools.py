@@ -28,6 +28,11 @@ async def list_columns_tool(
         verbosity: 'compact' (default) strips default deleted flag. Columns
                    are already minimal — compact rarely changes anything here;
                    kept for consistency across read tools.
+
+    RETURNS:
+      compact (default): {id, title, boardId, color} (columns are already minimal).
+      custom: only {id} per item. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         if board_id:
@@ -107,6 +112,11 @@ async def get_column_tool(
     Args:
         column_id: Column UUID.
         verbosity: 'compact' (default) strips default deleted flag; 'full' returns raw API payload.
+
+    RETURNS:
+      compact (default): {id, title, boardId, color}.
+      custom: only {id}. Add fields via include=[].
+      full: raw API payload.
     """
     try:
         await ctx.info(f"Fetching column details: {column_id}")

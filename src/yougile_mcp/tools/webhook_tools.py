@@ -57,6 +57,7 @@ async def list_webhooks_tool(
     offset: int = 0,
     include_deleted: bool = False,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -92,7 +93,7 @@ async def list_webhooks_tool(
             await ctx.info(
                 f"Successfully retrieved {len(page)} webhook(s) (of {len(result)} total)"
             )
-        return apply_verbosity(page, dto_type="webhook", verbosity=verbosity)
+        return apply_verbosity(page, dto_type="webhook", verbosity=verbosity, include=include, is_list=True)
 
     except ValidationError as e:
         if ctx:

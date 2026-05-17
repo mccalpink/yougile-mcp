@@ -1958,7 +1958,7 @@ def html_guide() -> str:
 
 
 @mcp.resource("yougile://skill-template")
-async def skill_template_resource(ctx: Context) -> str:
+async def skill_template_resource() -> str:
     """Canonical link to the SKILL.md template for personal workflow configuration.
 
     Use this resource to inspect the skill template BEFORE running setup_yougile_skill.

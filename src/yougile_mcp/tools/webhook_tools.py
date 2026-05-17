@@ -16,6 +16,7 @@ from ...core.exceptions import YouGileError, ValidationError
 from ...api import webhooks
 from ...utils.validation import validate_uuid, validate_non_empty_string
 from ...utils.verbosity import apply_verbosity, Verbosity
+from ...utils.normalizers import normalize_webhook_filters
 
 
 def _redact_url(url: str) -> str:
@@ -155,6 +156,12 @@ async def create_webhook_tool(
                 f"filters={len(filters)}"
             )
 
+        # Quirk: WebhookFilters.name описан как array в OpenAPI, фактически — строка.
+        # Нормализуем до отправки в API.
+        if filters:
+            filters, filter_meta = normalize_webhook_filters(filters, return_meta=True)
+            # filter_meta.notes попадут в ответ если нужно
+
         payload: Dict[str, Any] = {
             "url": url,
             "event": event,
@@ -211,7 +218,11 @@ async def update_webhook_tool(
         if event is not None:
             payload["event"] = validate_non_empty_string(event, "event")
         if filters is not None:
-            payload["filters"] = _validate_filters(filters)
+            filters = _validate_filters(filters)
+            # Quirk: WebhookFilters.name описан как array в OpenAPI, фактически — строка.
+            if filters:
+                filters, _ = normalize_webhook_filters(filters, return_meta=True)
+            payload["filters"] = filters
         if disabled is not None:
             payload["disabled"] = bool(disabled)
         if deleted:

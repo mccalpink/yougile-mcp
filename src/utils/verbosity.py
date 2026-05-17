@@ -335,6 +335,33 @@ def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Hints builder
+# ---------------------------------------------------------------------------
+
+# Поля, для которых строятся _hints в compact list_* (только для TaskDto)
+_TASK_HINT_FIELDS = {
+    "has_description": lambda t: bool(t.get("description")),
+    "has_checklists": lambda t: bool(t.get("checklists")),
+    "has_stickers": lambda t: bool(t.get("stickers")),
+    "has_extension_data": lambda t: bool(t.get("extensionData")),
+    "has_deadline": lambda t: bool(t.get("deadline") and t["deadline"].get("deadline")),
+    "has_stopwatch": lambda t: bool(t.get("stopwatch")),
+    "has_timer": lambda t: bool(t.get("timer")),
+}
+
+
+def build_hints(obj: dict, dto_type: str) -> "dict | None":
+    """Строит _hints блок для compact list_* ответов.
+
+    Returns:
+        Словарь has_X: bool, или None если для dto_type _hints не предусмотрены.
+    """
+    if dto_type != "task":
+        return None
+    return {key: checker(obj) for key, checker in _TASK_HINT_FIELDS.items()}
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -344,6 +371,7 @@ def apply_verbosity(
     dto_type: str,
     verbosity: Verbosity = "compact",
     include: "list[str] | None" = None,
+    is_list: bool = False,
 ) -> Any:
     """Apply verbosity rules to an API response.
 
@@ -387,6 +415,10 @@ def apply_verbosity(
         for item in data["content"]:
             if isinstance(item, dict):
                 c, omitted = compactor(item)
+                if is_list:
+                    hints = build_hints(item, dto_type)  # строим по СЫРОМУ item
+                    if hints is not None:
+                        c["_hints"] = hints
                 compacted_content.append(c)
                 all_omitted.update(omitted)
             else:

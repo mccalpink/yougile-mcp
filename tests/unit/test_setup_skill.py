@@ -1,10 +1,12 @@
+import filecmp
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
 
-from src.yougile_mcp.tools.meta_tools import setup_yougile_skill_impl
+from src.yougile_mcp.tools.meta_tools import setup_yougile_skill_impl, _TEMPLATE_DIR
 
 
 @pytest.mark.asyncio
@@ -124,18 +126,71 @@ async def test_setup_idempotent_skip_unchanged():
 
 
 @pytest.mark.asyncio
-async def test_setup_does_not_touch_existing_skill_md():
-    """Если SKILL.md уже есть в memory_dir — не трогаем."""
+async def test_setup_installs_skill_md_to_empty_dir():
+    """В пустую memory_dir setup устанавливает SKILL.md из template."""
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = Path(tmp) / "skill"
+        result = await setup_yougile_skill_impl(memory_dir=str(memory))
+
+        skill_md = memory / "SKILL.md"
+        assert skill_md.exists(), "SKILL.md должна быть установлена"
+        assert result["skill_md_status"] == "installed"
+        # Содержимое совпадает с template
+        template_skill = _TEMPLATE_DIR / "SKILL.md"
+        assert filecmp.cmp(str(skill_md), str(template_skill), shallow=False)
+
+
+@pytest.mark.asyncio
+async def test_setup_skips_skill_md_if_identical():
+    """Если SKILL.md уже идентичен template — skip без бэкапа."""
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = Path(tmp) / "skill"
+        # Первый прогон — installed
+        await setup_yougile_skill_impl(memory_dir=str(memory))
+        # Второй прогон — skipped_identical
+        result = await setup_yougile_skill_impl(memory_dir=str(memory))
+        assert result["skill_md_status"] == "skipped_identical"
+        # Бэкапа быть не должно
+        backups = list(memory.glob("SKILL.md.bak.*"))
+        assert backups == [], f"Бэкапов не должно быть: {backups}"
+
+
+@pytest.mark.asyncio
+async def test_setup_backs_up_custom_skill_md_before_overwrite():
+    """Если SKILL.md существует и отличается от template — бэкапим + перезаписываем."""
     with tempfile.TemporaryDirectory() as tmp:
         memory = Path(tmp) / "skill"
         memory.mkdir(parents=True)
         custom_skill = memory / "SKILL.md"
-        custom_skill.write_text("# My custom SKILL — DO NOT TOUCH")
+        custom_content = "# My custom SKILL — should be backed up\n"
+        custom_skill.write_text(custom_content)
+
+        result = await setup_yougile_skill_impl(memory_dir=str(memory))
+
+        # Status = replaced_with_backup
+        assert result["skill_md_status"] == "replaced_with_backup"
+        # Текущий SKILL.md = template (перезаписан)
+        template_skill = _TEMPLATE_DIR / "SKILL.md"
+        assert filecmp.cmp(str(custom_skill), str(template_skill), shallow=False)
+        # Бэкап содержит старый custom content
+        backups = list(memory.glob("SKILL.md.bak.*"))
+        assert len(backups) == 1, f"Должен быть 1 бэкап: {backups}"
+        assert backups[0].read_text() == custom_content
+
+
+@pytest.mark.asyncio
+async def test_setup_does_not_touch_briefing_md():
+    """Если briefing.md уже есть в memory_dir — не трогаем (это пользовательский контент)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        memory = Path(tmp) / "skill"
+        memory.mkdir(parents=True)
+        user_briefing = memory / "briefing.md"
+        user_briefing.write_text("# My user briefing — DO NOT TOUCH")
 
         await setup_yougile_skill_impl(memory_dir=str(memory))
 
-        # SKILL.md остался нетронутым
-        assert custom_skill.read_text() == "# My custom SKILL — DO NOT TOUCH"
+        # briefing.md остался нетронутым (это пользовательские данные)
+        assert user_briefing.read_text() == "# My user briefing — DO NOT TOUCH"
 
 
 @pytest.mark.asyncio

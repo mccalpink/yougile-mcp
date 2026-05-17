@@ -10,6 +10,7 @@ from __future__ import annotations
 import filecmp
 import os
 import shutil
+import time
 from pathlib import Path
 
 from ...utils.schema_catalog import get_entity_schema, get_all_entities
@@ -156,23 +157,50 @@ def _copy_dir_idempotent(src: Path, dst: Path) -> tuple[list[str], list[str]]:
     return installed, skipped
 
 
+def _install_skill_md(src: Path, dst: Path) -> str:
+    """
+    Устанавливает SKILL.md из template в memory dir.
+
+    Если существующий SKILL.md идентичен template — skip.
+    Если отличается — бэкапит как SKILL.md.bak.<timestamp> и перезаписывает.
+    Если не существует — просто копирует.
+
+    Returns:
+        status: "installed" | "skipped_identical" | "replaced_with_backup"
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if not dst.exists():
+        shutil.copy2(str(src), str(dst))
+        return "installed"
+    if filecmp.cmp(str(src), str(dst), shallow=False):
+        return "skipped_identical"
+    backup = dst.with_name(f"{dst.name}.bak.{int(time.time())}")
+    shutil.copy2(str(dst), str(backup))
+    shutil.copy2(str(src), str(dst))
+    return "replaced_with_backup"
+
+
 async def setup_yougile_skill_impl(
     memory_dir: str | None = None,
 ) -> dict:
     """
-    Возвращает список вопросов и параметры для создания персонализированного briefing.md.
-    Также копирует references/ и templates/ из template-директории в memory_dir.
+    Полная установка персонального SKILL'а в memory_dir.
 
+    Устанавливает:
+    - SKILL.md (главный файл, с авто-бэкапом старого если он отличается)
+    - references/ (5 справочных файлов)
+    - templates/ (шаблоны briefing.md и filters.md)
+
+    Возвращает список вопросов для агента, чтобы он мог наполнить briefing.md.
     Не выполняет интерактивную логику — это делает агент (Claude).
-    Тул описывает что нужно сделать и копирует статичные справочные файлы.
 
     Args:
-        memory_dir: Путь для сохранения briefing.md и справочных файлов.
+        memory_dir: Путь для установки SKILL'а.
                     По умолчанию: ~/.agents/skills/yougile-personal/
 
     Returns:
-        dict с ключами: questions, target_path, template_path, existing_briefing, instructions,
-                        references_installed, templates_installed.
+        dict с ключами: questions, target_path, template_path, existing_briefing,
+                        instructions, skill_md_status, references_installed, templates_installed.
     """
     target_dir = Path(memory_dir) if memory_dir else _DEFAULT_MEMORY_DIR
     target_path = target_dir / _BRIEFING_FILENAME
@@ -181,7 +209,13 @@ async def setup_yougile_skill_impl(
 
     template_path = _TEMPLATE_DIR / "templates" / "briefing.template.md"
 
-    # Копируем references/ — не трогаем SKILL.md (устанавливается отдельно)
+    # Устанавливаем SKILL.md с авто-бэкапом
+    skill_md_status = _install_skill_md(
+        src=_TEMPLATE_DIR / "SKILL.md",
+        dst=target_dir / "SKILL.md",
+    )
+
+    # Копируем references/ и templates/
     refs_installed, refs_skipped = _copy_dir_idempotent(
         src=_TEMPLATE_DIR / "references",
         dst=target_dir / "references",
@@ -196,6 +230,7 @@ async def setup_yougile_skill_impl(
         "target_path": str(target_path),
         "template_path": str(template_path),
         "existing_briefing": existing,
+        "skill_md_status": skill_md_status,
         "instructions": (
             "Ask the user these questions one by one (or all at once). "
             "Then call list_projects for each workspace to resolve project UUIDs. "

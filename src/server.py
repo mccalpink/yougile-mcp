@@ -23,6 +23,8 @@ from pydantic import Field
 from .config import settings
 from .core import auth
 from .core.client import YouGileClient
+from .core.registry import registry
+from .core.session_state import get_active, set_active, resolve_workspace
 from .core.models import MessageReact, TaskColor
 from .utils.verbosity import Verbosity
 from .api import auth as auth_api
@@ -171,6 +173,11 @@ ANN_DELETE = ToolAnnotations(
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP(name=settings.server_name)
+
+
+def _resolve_ws(workspace: Optional[str], ctx: Context) -> str:
+    """Обёртка resolve_workspace для тулов — прокидывает registry."""
+    return resolve_workspace(workspace, ctx, registry)
 
 
 # Reusable Annotated types ---------------------------------------------------

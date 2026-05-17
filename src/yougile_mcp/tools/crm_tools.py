@@ -36,6 +36,7 @@ async def create_crm_contact_tool(
     Convenience fields (position/phone/email/additional_phone/address) are
     merged into the `fields` payload. Use `fields_extra` for any keys not
     exposed as named arguments — it is merged last and wins on conflict.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -105,6 +106,7 @@ async def find_crm_contact_by_external_id_tool(
 
     Returns the contact dict if found, or None if the contact does not exist
     (YouGile responds 404 in that case).
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:

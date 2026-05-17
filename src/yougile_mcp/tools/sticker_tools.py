@@ -30,6 +30,7 @@ async def list_string_stickers_tool(
         states dropped (opt-in via include=['string_states']).
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -73,6 +74,7 @@ async def get_string_sticker_tool(
         states dropped (opt-in via include=['string_states']).
       custom: only {id}. Add fields via include=[].
       full: raw API payload (includes states array).
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -107,7 +109,9 @@ async def get_string_sticker_state_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Get information about a specific state of a string sticker."""
+    """Get information about a specific state of a string sticker.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         if ctx:
             await ctx.info(f"Fetching sticker state: {sticker_id}/{state_id}")
@@ -145,7 +149,9 @@ async def get_sprint_sticker_state_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Get information about a specific state of a sprint sticker."""
+    """Get information about a specific state of a sprint sticker.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         if ctx:
             await ctx.info(f"Fetching sprint sticker state: {sticker_id}/{state_id}")
@@ -194,7 +200,9 @@ async def decode_task_stickers_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Decode task stickers dictionary into readable sticker and state information."""
+    """Decode task stickers dictionary into readable sticker and state information.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         if ctx:
             await ctx.info(f"Decoding {len(stickers_dict)} task stickers...")

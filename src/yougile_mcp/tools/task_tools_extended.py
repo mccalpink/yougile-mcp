@@ -63,6 +63,7 @@ async def update_task_tool(
         id_task_common: Cross-company human-readable task ID (API field: idTaskCommon)
         id_task_project: Per-project human-readable task ID (API field: idTaskProject)
         extension_data: Arbitrary data used by YouGile extensions (API field: extensionData)
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -192,7 +193,9 @@ async def update_task_tool(
 
 
 async def get_task_chat_subscribers_tool(task_id: str, workspace: str = "default", ctx: Context = None) -> List[models.User]:
-    """Get list of users subscribed to task chat."""
+    """Get list of users subscribed to task chat.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         await ctx.info(f"Fetching chat subscribers for task: {task_id}")
 
@@ -223,7 +226,9 @@ async def update_task_chat_subscribers_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Update task chat subscribers list."""
+    """Update task chat subscribers list.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         await ctx.info(f"Updating chat subscribers for task: {task_id}")
 

@@ -40,6 +40,7 @@ async def list_boards_tool(
         _meta.omitted_fields lists what was dropped.
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching boards from YouGile (limit: {limit}, offset: {offset})...")
@@ -95,6 +96,7 @@ async def create_board_tool(
 
     NOTE: The YouGile CreateBoardDto only accepts `title`, `projectId`, and
     `stickers`. Workflow assignment is not part of board creation.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Creating board: {title}")
@@ -152,6 +154,7 @@ async def get_board_tool(
       compact (default): {id, title, projectId, stickers}.
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching board details: {board_id}")
@@ -195,6 +198,7 @@ async def update_board_tool(
 
     NOTE: The YouGile UpdateBoardDto only accepts `title`, `projectId`,
     `stickers`, and `deleted`. There is no workflow field.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Updating board: {board_id}")

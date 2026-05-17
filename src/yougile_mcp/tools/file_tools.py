@@ -110,6 +110,7 @@ async def upload_file_tool(
 
     Returns:
         FileUploadDto: {"result": "ok", "url": "/user-data/...", "fullUrl": "https://..."}
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         path = path.strip() if isinstance(path, str) else path

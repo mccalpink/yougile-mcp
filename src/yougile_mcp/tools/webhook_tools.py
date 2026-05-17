@@ -78,6 +78,7 @@ async def list_webhooks_tool(
         lastSuccess/failuresSinceLastSuccess dropped.
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -136,6 +137,7 @@ async def create_webhook_tool(
             receives every event in the company.
         allow_unfiltered: pass True only when you explicitly want a
             company-wide firehose subscription. Default False.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         url = validate_non_empty_string(url, "url")
@@ -203,6 +205,7 @@ async def update_webhook_tool(
 
     Only the fields explicitly provided are sent to the API. Pass `deleted=True`
     to soft-delete the webhook, `disabled=True` to pause without removing it.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:

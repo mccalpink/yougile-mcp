@@ -33,6 +33,7 @@ async def list_columns_tool(
       compact (default): {id, title, boardId, color} (columns are already minimal).
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if board_id:
@@ -65,7 +66,9 @@ async def create_column_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Create a new column in a board."""
+    """Create a new column in a board.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         await ctx.info(f"Creating column: {title}")
         
@@ -117,6 +120,7 @@ async def get_column_tool(
       compact (default): {id, title, boardId, color}.
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching column details: {column_id}")
@@ -157,6 +161,7 @@ async def update_column_tool(
         color: New column color (1-16)
         board_id: Move the column to a different board (UUID).
         deleted: Soft-delete the column (True) or restore (False).
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Updating column: {column_id}")

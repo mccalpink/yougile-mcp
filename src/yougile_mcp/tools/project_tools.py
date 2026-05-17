@@ -27,6 +27,7 @@ async def list_projects_tool(
         _meta.omitted_fields lists what was dropped (users map, raw timestamp).
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info("Fetching projects from YouGile...")
@@ -56,6 +57,7 @@ async def create_project_tool(
     NOTE: The YouGile CreateProjectDto only accepts `title` and `users` — there
     is no workflow association at create time. Workflow concepts live on
     boards, not projects.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Creating project: {title}")
@@ -112,6 +114,7 @@ async def get_project_tool(
         _meta.omitted_fields lists what was dropped (users map, raw timestamp).
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching project details: {project_id}")
@@ -147,6 +150,7 @@ async def update_project_tool(
 
     NOTE: The YouGile UpdateProjectDto only accepts `title`, `users`, and
     `deleted`. There is no workflow field — boards carry workflows.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Updating project: {project_id}")

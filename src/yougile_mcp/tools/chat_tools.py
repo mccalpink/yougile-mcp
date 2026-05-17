@@ -29,6 +29,7 @@ async def list_group_chats_tool(
         userRoleMap/roleConfigMap dropped (opt-in via include=['chat_maps']).
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info("Fetching group chats from YouGile...")
@@ -68,6 +69,7 @@ async def create_group_chat_tool(
         role_config_map: Map {roleSlug: {editProperties, editAdmins, editUsers,
                          sendMessages, removeMessages, ...}} defining permissions
                          for each role used in user_role_map
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -148,6 +150,7 @@ async def get_group_chat_tool(
         userRoleMap/roleConfigMap dropped (opt-in via include=['chat_maps']).
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching group chat details: {chat_id}")
@@ -192,6 +195,7 @@ async def get_chat_messages_tool(
       compact (default): {id, text, label, timestamp, userId, reactions if non-empty}.
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching messages from chat: {chat_id}")
@@ -238,6 +242,7 @@ async def send_chat_message_tool(
                    sanitize untrusted input before passing.
         label: Optional short label / quick link displayed with the message
                (e.g. "Comment", "Update", "Mention"). Defaults to "Comment".
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -300,6 +305,7 @@ async def get_chat_message_tool(
       compact (default): {id, text, label, timestamp, userId, reactions if non-empty}.
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching message {message_id} from chat: {chat_id}")
@@ -345,6 +351,7 @@ async def update_chat_message_tool(
         label: New label / quick link text for the message
         react: Admin reaction emoji. One of: 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔
         delete: If True, soft-deletes the message
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -406,7 +413,9 @@ async def get_task_comments_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
-    """Get comments for a specific task (alias for get_chat_messages with task ID)."""
+    """Get comments for a specific task (alias for get_chat_messages with task ID).
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     if ctx:
         await ctx.info(f"Fetching comments for task: {task_id}")
     return await get_chat_messages_tool(
@@ -420,7 +429,9 @@ async def add_task_comment_tool(
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
-    """Add a comment to a specific task (alias for send_chat_message with task ID)."""
+    """Add a comment to a specific task (alias for send_chat_message with task ID).
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     if ctx:
         await ctx.info(f"Adding comment to task: {task_id}")
     return await send_chat_message_tool(task_id, comment, workspace=workspace, ctx=ctx)

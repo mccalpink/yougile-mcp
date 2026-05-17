@@ -48,6 +48,7 @@ async def list_task_summaries_tool(
       "deadline_history" — deadline.history audit trail
       "timestamps"       — raw ms timestamps (timestamp, completedTimestamp, archivedTimestamp)
       "all"              — all opt-in fields above
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -113,6 +114,7 @@ async def list_tasks_tool(
 
     include[] keys: description, checklists, stickers, stopwatch, timer,
       time_tracking, deal, extension_data, deadline_history, timestamps, all.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -209,6 +211,7 @@ async def create_task_tool(
         id_task_common: Cross-company human-readable task ID (API field: idTaskCommon)
         id_task_project: Per-project human-readable task ID (API field: idTaskProject)
         extension_data: Arbitrary data used by YouGile extensions (API field: extensionData)
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -348,6 +351,7 @@ async def get_task_tool(
 
     include[] keys: description, checklists, stickers, stopwatch, timer,
       time_tracking, deal, extension_data, deadline_history, timestamps, all.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -405,6 +409,7 @@ async def get_tasks_by_date_tool(
 
     include[] keys: description, checklists, stickers, stopwatch, timer,
       time_tracking, deal, extension_data, deadline_history, timestamps, all.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:

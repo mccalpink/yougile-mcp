@@ -41,6 +41,7 @@ async def list_users_tool(
       compact (default): {id, email, realName, status} per user.
       custom: only {id} per item. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info("Fetching users from YouGile...")
@@ -83,6 +84,7 @@ async def invite_user_tool(
     (optional). Identity fields (first/last name, departments) are NOT
     settable via API v2 — the invitee provides those after accepting the
     invite, or an admin edits them in the web UI.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -130,6 +132,7 @@ async def get_user_tool(
       compact (default): {id, email, realName, status}.
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         await ctx.info(f"Fetching user details: {user_id}")
@@ -163,6 +166,7 @@ async def update_user_tool(
 
     YouGile UpdateUserDto exposes only ``isAdmin``. Other identity fields
     (first/last name, departments, email) are NOT settable via API v2.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -216,6 +220,7 @@ async def get_me_tool(
       compact (default): {id, email, realName, status}.
       custom: only {id}. Add fields via include=[].
       full: raw API payload.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
     """
     try:
         if ctx:
@@ -242,7 +247,9 @@ async def get_me_tool(
 
 
 async def remove_user_tool(user_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
-    """Remove user from the company."""
+    """Remove user from the company.
+    Note: workspace must be a resolved string (not None). Caller (server.py) handles session→workspace resolution via _resolve_ws.
+    """
     try:
         await ctx.info(f"Removing user: {user_id}")
 

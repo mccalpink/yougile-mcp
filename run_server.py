@@ -24,6 +24,14 @@ from pathlib import Path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
+# Загружаем .env из корня проекта ДО чтения os.environ — иначе YOUGILE_TRANSPORT
+# и прочие переменные из .env не видны на этапе _resolve_transport().
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env", override=False)
+except ImportError:
+    pass  # python-dotenv не установлен — env только из shell
+
 
 def _resolve_transport() -> str:
     if "--http" in sys.argv:

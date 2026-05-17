@@ -22,6 +22,7 @@ async def list_task_summaries_tool(
     sticker_id: Optional[str] = None,
     sticker_state_id: Optional[str] = None,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -50,8 +51,8 @@ async def list_task_summaries_tool(
 
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} task summaries")
-        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
-        
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity, include=include, is_list=True)
+
     except YouGileError as e:
         if ctx:
             await ctx.error(f"API error while fetching task list: {e.message}")
@@ -72,6 +73,7 @@ async def list_tasks_tool(
     sticker_id: Optional[str] = None,
     sticker_state_id: Optional[str] = None,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -122,8 +124,8 @@ async def list_tasks_tool(
 
         if ctx:
             await ctx.info(f"✅ Successfully retrieved {len(result)} detailed tasks")
-        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
-        
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity, include=include, is_list=True)
+
     except ValidationError as e:
         if ctx:
             await ctx.error(f"Validation failed: {e.message}")
@@ -304,6 +306,7 @@ async def create_task_tool(
 async def get_task_tool(
     task_id: str,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
@@ -324,8 +327,8 @@ async def get_task_tool(
 
         if ctx:
             await ctx.info(f"✅ Successfully retrieved task: {result.get('title', task_id)}")
-        return apply_verbosity(result, dto_type="task", verbosity=verbosity)
-        
+        return apply_verbosity(result, dto_type="task", verbosity=verbosity, include=include)
+
     except ValidationError as e:
         if ctx:
             await ctx.error(f"Validation failed: {e.message}")
@@ -347,6 +350,7 @@ async def get_tasks_by_date_tool(
     completed_only: bool = False,
     limit: int = 5000,
     verbosity: Verbosity = "compact",
+    include: Optional[List[str]] = None,
     workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
@@ -488,8 +492,8 @@ async def get_tasks_by_date_tool(
         if ctx:
             await ctx.info(f"✅ Found {len(filtered_tasks)} tasks matching criteria for {filter_date}, returning {len(final_results)}")
 
-        return apply_verbosity(final_results, dto_type="task", verbosity=verbosity)
-        
+        return apply_verbosity(final_results, dto_type="task", verbosity=verbosity, include=include, is_list=True)
+
     except ValidationError as e:
         if ctx:
             await ctx.error(f"Validation failed: {e.message}")

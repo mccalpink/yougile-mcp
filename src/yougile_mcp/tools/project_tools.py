@@ -11,7 +11,7 @@ from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import projects
 from ...utils.validation import validate_uuid, validate_non_empty_string
-async def list_projects_tool(workspace: str, ctx: Context) -> List[models.Project]:
+async def list_projects_tool(workspace: str = "default", ctx: Context = None) -> List[models.Project]:
     """Get list of all projects in the company."""
     try:
         await ctx.info("Fetching projects from YouGile...")
@@ -33,11 +33,11 @@ async def list_projects_tool(workspace: str, ctx: Context) -> List[models.Projec
 
 
 async def create_project_tool(
-    workspace: str,
     title: str,
     users: Dict[str, str] = None,
     workflow_id: str = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> models.CreatedEntity:
     """Create a new project."""
     try:
@@ -82,7 +82,7 @@ async def create_project_tool(
         raise
 
 
-async def get_project_tool(workspace: str, project_id: str, ctx: Context) -> models.Project:
+async def get_project_tool(project_id: str, workspace: str = "default", ctx: Context = None) -> models.Project:
     """Get detailed information about a specific project."""
     try:
         await ctx.info(f"Fetching project details: {project_id}")
@@ -109,12 +109,12 @@ async def get_project_tool(workspace: str, project_id: str, ctx: Context) -> mod
 
 
 async def update_project_tool(
-    workspace: str,
     project_id: str,
     title: str = None,
     users: Dict[str, str] = None,
     workflow_id: str = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> models.Project:
     """Update project information."""
     try:

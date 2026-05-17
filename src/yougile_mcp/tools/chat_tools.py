@@ -15,7 +15,7 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 # Group Chat Management
-async def list_group_chats_tool(workspace: str, ctx: Context) -> List[Dict[str, Any]]:
+async def list_group_chats_tool(workspace: str = "default", ctx: Context = None) -> List[Dict[str, Any]]:
     """Get list of all group chats."""
     try:
         await ctx.info("Fetching group chats from YouGile...")
@@ -35,12 +35,12 @@ async def list_group_chats_tool(workspace: str, ctx: Context) -> List[Dict[str, 
 
 
 async def create_group_chat_tool(
-    workspace: str,
     title: str,
     users: Optional[Dict[str, Dict[str, Any]]] = None,
     user_role_map: Optional[Dict[str, str]] = None,
     role_config_map: Optional[Dict[str, Dict[str, Any]]] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a new group chat.
 
@@ -116,7 +116,7 @@ async def create_group_chat_tool(
         raise
 
 
-async def get_group_chat_tool(workspace: str, chat_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_group_chat_tool(chat_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Get detailed information about a specific group chat."""
     try:
         await ctx.info(f"Fetching group chat details: {chat_id}")
@@ -142,10 +142,10 @@ async def get_group_chat_tool(workspace: str, chat_id: str, ctx: Context) -> Dic
 
 # Chat Messages (Comments)
 async def get_chat_messages_tool(
-    workspace: str,
     chat_id: str,
     limit: int = 50,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get messages from a chat (task comments or group chat messages).
     
@@ -180,12 +180,12 @@ async def get_chat_messages_tool(
 
 
 async def send_chat_message_tool(
-    workspace: str,
     chat_id: str,
     text: str,
     text_html: Optional[str] = None,
     label: Optional[str] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Send a message to a chat (add comment to task or send group chat message).
 
@@ -241,10 +241,10 @@ async def send_chat_message_tool(
 
 
 async def get_chat_message_tool(
-    workspace: str,
     chat_id: str,
     message_id: str,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Get a specific message from a chat."""
     try:
@@ -271,13 +271,13 @@ async def get_chat_message_tool(
 
 
 async def update_chat_message_tool(
-    workspace: str,
     chat_id: str,
     message_id: str,
     label: Optional[str] = None,
     react: Optional[MessageReact] = None,
     delete: bool = False,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Update message metadata: label, admin reaction, or soft-delete.
 
@@ -345,23 +345,24 @@ async def update_chat_message_tool(
 
 # Task-specific comment helpers
 async def get_task_comments_tool(
-    workspace: str,
     task_id: str,
     limit: int = 50,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get comments for a specific task (alias for get_chat_messages with task ID)."""
-    await ctx.info(f"Fetching comments for task: {task_id}")
-    return await get_chat_messages_tool(workspace, task_id, limit, ctx)
+    if ctx:
+        await ctx.info(f"Fetching comments for task: {task_id}")
+    return await get_chat_messages_tool(task_id, limit, workspace=workspace, ctx=ctx)
 
 
 async def add_task_comment_tool(
-    workspace: str,
     task_id: str,
     comment: str,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Add a comment to a specific task (alias for send_chat_message with task ID)."""
     if ctx:
         await ctx.info(f"Adding comment to task: {task_id}")
-    return await send_chat_message_tool(workspace, task_id, comment, ctx=ctx)
+    return await send_chat_message_tool(task_id, comment, workspace=workspace, ctx=ctx)

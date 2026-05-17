@@ -126,11 +126,16 @@ from .yougile_mcp.prompts.workflow_prompts import (
 # client can make informed UX decisions (auto-approve reads, prompt on writes).
 
 # Pure reads against the YouGile API.
+#
+# openWorldHint=False everywhere: every tool talks to one specific closed API
+# (YouGile v2). Per the MCP spec, openWorldHint=True signals the tool reaches
+# an unbounded outer world (web search, generic HTTP), which is misleading
+# here and would prompt clients to apply broader-scope confirmations.
 ANN_READ = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
     idempotentHint=True,
-    openWorldHint=True,
+    openWorldHint=False,
 )
 
 # Mutating but additive (create, send, invite, upload).
@@ -138,7 +143,7 @@ ANN_CREATE = ToolAnnotations(
     readOnlyHint=False,
     destructiveHint=False,
     idempotentHint=False,
-    openWorldHint=True,
+    openWorldHint=False,
 )
 
 # Mutating, repeating with the same args is safe (re-applies same state).
@@ -146,7 +151,7 @@ ANN_UPDATE = ToolAnnotations(
     readOnlyHint=False,
     destructiveHint=True,
     idempotentHint=True,
-    openWorldHint=True,
+    openWorldHint=False,
 )
 
 # Mutating, removes data (soft-delete, revoke, remove user).
@@ -154,7 +159,7 @@ ANN_DELETE = ToolAnnotations(
     readOnlyHint=False,
     destructiveHint=True,
     idempotentHint=True,
-    openWorldHint=True,
+    openWorldHint=False,
 )
 
 
@@ -321,38 +326,40 @@ async def list_users(
     Does NOT include department membership or custom fields — call get_user
     for the full profile.
     """
-    return await list_users_tool(workspace, ctx)
+    return await list_users_tool(workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def invite_user(
+    email: Annotated[str, Field(description="Invitee email address.")],
+    is_admin: Annotated[
+        bool,
+        Field(
+            description=(
+                "True to grant company-admin rights on invite. Default False."
+            ),
+        ),
+    ] = False,
     workspace: WorkspaceParam = "default",
-    email: Annotated[Optional[str], Field(description="Invitee email address.")] = None,
-    first_name: Annotated[Optional[str], Field(description="Invitee first name.")] = None,
-    last_name: Annotated[Optional[str], Field(description="Invitee last name.")] = None,
-    role: Annotated[
-        str,
-        Field(description="Initial role: 'admin' or 'user'."),
-    ] = "user",
-    departments: Annotated[
-        Optional[List[str]],
-        Field(description="List of department UUIDs to attach the new user to."),
-    ] = None,
     ctx: Context = None,
 ) -> dict:
     """Invite a user to the workspace company by email.
 
     USE WHEN: onboarding a new team member.
+    API CONTRACT: YouGile's CreateUserDto accepts ONLY `email` (required) and
+    `isAdmin` (optional). Identity fields (first/last name, departments) are
+    NOT settable via API v2 — the invitee provides those after accepting the
+    invite, or an admin edits them in the YouGile web UI.
     SIDE EFFECT: YouGile sends an email invitation; consumes a license seat.
     RETURNS: {id} of the created user record.
     """
-    return await invite_user_tool(workspace, email, first_name, last_name, role, departments or [], ctx)
+    return await invite_user_tool(email=email, is_admin=is_admin, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_user(
+    user_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    user_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get full profile of one user.
@@ -361,36 +368,38 @@ async def get_user(
     list, status timestamp, custom data).
     RETURNS: full UserDto.
     """
-    return await get_user_tool(workspace, user_id, ctx)
+    return await get_user_tool(user_id=user_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_user(
+    user_id: UUIDParam,
+    is_admin: Annotated[
+        bool,
+        Field(
+            description=(
+                "Target admin flag. Pass True to promote to company admin, "
+                "False to demote."
+            ),
+        ),
+    ],
     workspace: WorkspaceParam = "default",
-    user_id: UUIDParam = None,
-    first_name: Annotated[Optional[str], Field(description="New first name.")] = None,
-    last_name: Annotated[Optional[str], Field(description="New last name.")] = None,
-    role: Annotated[Optional[str], Field(description="New role: 'admin' or 'user'.")] = None,
-    departments: Annotated[
-        Optional[List[str]],
-        Field(description="Replacement department UUIDs (full replacement, not append)."),
-    ] = None,
     ctx: Context = None,
 ) -> dict:
-    """Update a user's name, role, or department membership.
+    """Update a user's admin status.
 
-    USE WHEN: changing role or org-structure assignment.
-    NOTE: only the fields you pass are updated. `departments` REPLACES the
-    existing list — read get_user first if you only want to add one.
-    Email cannot be changed via API.
+    API CONTRACT: YouGile's UpdateUserDto exposes ONLY `isAdmin`. Other
+    identity fields (name, departments, email) are NOT settable via API v2 —
+    edit those in the YouGile web UI.
+    USE WHEN: promoting/demoting between company admin and regular user.
     """
-    return await update_user_tool(workspace, user_id, first_name, last_name, role, departments, ctx)
+    return await update_user_tool(user_id=user_id, is_admin=is_admin, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_DELETE)
 async def remove_user(
+    user_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    user_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Remove a user from the workspace company.
@@ -399,7 +408,7 @@ async def remove_user(
     dangling user_id reference. Frees a license seat.
     USE WHEN: offboarding. Always confirm with the human first.
     """
-    return await remove_user_tool(workspace, user_id, ctx)
+    return await remove_user_tool(user_id=user_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_READ)
@@ -412,7 +421,7 @@ async def get_me(
     USE WHEN: you need the calling user's UUID (e.g. to filter
     list_tasks(assigned_to=me) without asking the user).
     """
-    return await get_me_tool(workspace, ctx)
+    return await get_me_tool(workspace=workspace, ctx=ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -431,13 +440,12 @@ async def list_projects(
     companies have <50 projects) — safe to call on demand.
     RETURNS: list of {id, title, users, timestamp}.
     """
-    return await list_projects_tool(workspace, ctx)
+    return await list_projects_tool(workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_project(
-    workspace: WorkspaceParam = "default",
-    title: Annotated[Optional[str], Field(description="Project title.")] = None,
+    title: Annotated[str, Field(description="Project title.")],
     users: Annotated[
         Optional[Dict[str, str]],
         Field(
@@ -451,6 +459,7 @@ async def create_project(
         Optional[str],
         Field(description="Optional workflow UUID to attach."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a new project.
@@ -458,23 +467,24 @@ async def create_project(
     RETURNS: {id} only — call get_project(project_id) for full details.
     RELATED: create_board to add boards after creation.
     """
-    return await create_project_tool(workspace, title, users, workflow_id, ctx)
+    return await create_project_tool(
+        title=title, users=users, workflow_id=workflow_id, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_project(
+    project_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    project_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one project's full details including users map."""
-    return await get_project_tool(workspace, project_id, ctx)
+    return await get_project_tool(project_id=project_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_project(
-    workspace: WorkspaceParam = "default",
-    project_id: UUIDParam = None,
+    project_id: UUIDParam,
     title: Annotated[Optional[str], Field(description="New title.")] = None,
     users: Annotated[
         Optional[Dict[str, str]],
@@ -486,6 +496,7 @@ async def update_project(
         ),
     ] = None,
     workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update project title, users, or workflow.
@@ -493,7 +504,10 @@ async def update_project(
     NOTE: `users` is a full replacement; preserve existing members by
     merging with get_project output.
     """
-    return await update_project_tool(workspace, project_id, title, users, workflow_id, ctx)
+    return await update_project_tool(
+        project_id=project_id, title=title, users=users, workflow_id=workflow_id,
+        workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +517,6 @@ async def update_project(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_boards(
-    workspace: WorkspaceParam = "default",
     project_id: Annotated[
         Optional[str],
         Field(description="Optional project UUID to scope the list."),
@@ -515,20 +528,23 @@ async def list_boards(
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     offset: Annotated[int, Field(description="Page offset, default 0.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted boards.")] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List boards, optionally filtered by project or title.
 
     RETURNS: list of {id, title, projectId, stickers}.
     """
-    return await list_boards_tool(workspace, project_id, title, limit, offset, include_deleted, ctx)
+    return await list_boards_tool(
+        project_id=project_id, title=title, limit=limit, offset=offset,
+        include_deleted=include_deleted, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_board(
-    workspace: WorkspaceParam = "default",
-    title: Annotated[Optional[str], Field(description="Board title.")] = None,
-    project_id: Annotated[Optional[str], Field(description="Parent project UUID (required).")] = None,
+    title: Annotated[str, Field(description="Board title.")],
+    project_id: Annotated[str, Field(description="Parent project UUID.")],
     workflow_id: Annotated[Optional[str], Field(description="Optional workflow UUID.")] = None,
     stickers: Annotated[
         Optional[Dict[str, Any]],
@@ -542,6 +558,7 @@ async def create_board(
             ),
         ),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a board inside a project.
@@ -550,24 +567,24 @@ async def create_board(
     RELATED: create_column to add columns; create_task to populate them.
     """
     return await create_board_tool(
-        workspace, title, project_id, workflow_id, stickers=stickers, ctx=ctx
+        title=title, project_id=project_id, workflow_id=workflow_id,
+        stickers=stickers, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_board(
+    board_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    board_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one board's full configuration."""
-    return await get_board_tool(workspace, board_id, ctx)
+    return await get_board_tool(board_id=board_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_board(
-    workspace: WorkspaceParam = "default",
-    board_id: UUIDParam = None,
+    board_id: UUIDParam,
     title: Annotated[Optional[str], Field(description="New title.")] = None,
     workflow_id: Annotated[Optional[str], Field(description="New workflow UUID.")] = None,
     stickers: Annotated[
@@ -578,6 +595,7 @@ async def update_board(
         Optional[bool],
         Field(description="True = soft-delete; False = restore previously-deleted board."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update a board's title, sticker visibility, or soft-delete state.
@@ -585,7 +603,8 @@ async def update_board(
     NOTE: only the fields you pass are touched.
     """
     return await update_board_tool(
-        workspace, board_id, title, workflow_id, stickers=stickers, deleted=deleted, ctx=ctx
+        board_id=board_id, title=title, workflow_id=workflow_id,
+        stickers=stickers, deleted=deleted, workspace=workspace, ctx=ctx,
     )
 
 
@@ -596,11 +615,11 @@ async def update_board(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_columns(
-    workspace: WorkspaceParam = "default",
     board_id: Annotated[
         Optional[str],
         Field(description="Board UUID filter; omit to list all columns in the workspace."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List columns, optionally scoped to a board.
@@ -608,14 +627,13 @@ async def list_columns(
     USE WHEN: you have a board_id but need the column_id (e.g. before
     create_task or update_task(column_id=...)).
     """
-    return await list_columns_tool(workspace, board_id, ctx)
+    return await list_columns_tool(board_id=board_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_column(
-    workspace: WorkspaceParam = "default",
-    title: Annotated[Optional[str], Field(description="Column title.")] = None,
-    board_id: Annotated[Optional[str], Field(description="Parent board UUID.")] = None,
+    title: Annotated[str, Field(description="Column title.")],
+    board_id: Annotated[str, Field(description="Parent board UUID.")],
     color: Annotated[
         Optional[int],
         Field(
@@ -627,38 +645,43 @@ async def create_column(
             le=16,
         ),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a column inside a board.
 
     RETURNS: {id} only.
     """
-    return await create_column_tool(workspace, title, board_id, color, ctx)
+    return await create_column_tool(
+        title=title, board_id=board_id, color=color, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_column(
+    column_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    column_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one column's details."""
-    return await get_column_tool(workspace, column_id, ctx)
+    return await get_column_tool(column_id=column_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_column(
-    workspace: WorkspaceParam = "default",
-    column_id: UUIDParam = None,
+    column_id: UUIDParam,
     title: Annotated[Optional[str], Field(description="New title.")] = None,
     color: Annotated[
         Optional[int],
         Field(description="New palette index, 1-16.", ge=1, le=16),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update a column's title or color."""
-    return await update_column_tool(workspace, column_id, title, color, ctx)
+    return await update_column_tool(
+        column_id=column_id, title=title, color=color, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -668,9 +691,9 @@ async def update_column(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_task_summaries(
-    workspace: WorkspaceParam = "default",
     limit: Annotated[int, Field(description="Page size, default 50, max 1000.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List minimal task summaries (id + title) with pagination.
@@ -678,12 +701,13 @@ async def list_task_summaries(
     USE WHEN: you need a roster and full task payloads would waste tokens.
     RELATED: list_tasks for the full task body.
     """
-    return await list_task_summaries_tool(workspace, limit, offset, ctx)
+    return await list_task_summaries_tool(
+        limit=limit, offset=offset, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def list_tasks(
-    workspace: WorkspaceParam = "default",
     column_id: Annotated[
         Optional[str],
         Field(description="Column UUID filter (server-side)."),
@@ -702,6 +726,7 @@ async def list_tasks(
         bool,
         Field(description="True to include soft-deleted tasks."),
     ] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List full task records with optional filters.
@@ -711,13 +736,16 @@ async def list_tasks(
     range, or creation date — those must be applied client-side after
     fetching. For date filtering, prefer get_tasks_by_date.
     """
-    return await list_tasks_tool(workspace, column_id, assigned_to, title, limit, offset, include_deleted, ctx)
+    return await list_tasks_tool(
+        column_id=column_id, assigned_to=assigned_to, title=title,
+        limit=limit, offset=offset, include_deleted=include_deleted,
+        workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_task(
-    workspace: WorkspaceParam = "default",
-    title: Annotated[Optional[str], Field(description="Task title (required).")] = None,
+    title: Annotated[str, Field(description="Task title.")],
     column_id: Annotated[
         Optional[str],
         Field(
@@ -815,6 +843,7 @@ async def create_task(
         Optional[Dict[str, Any]],
         Field(description="Free-form data used by YouGile extensions."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a task.
@@ -825,18 +854,17 @@ async def create_task(
     RETURNS: {id} only — call get_task for the full payload.
     """
     return await create_task_tool(
-        workspace,
-        title,
-        column_id,
-        description,
-        assigned_users,
-        deadline,
-        time_tracking,
-        stickers,
-        subtasks,
-        checklists,
-        completed,
-        archived,
+        title=title,
+        column_id=column_id,
+        description=description,
+        assigned_users=assigned_users,
+        deadline=deadline,
+        time_tracking=time_tracking,
+        stickers=stickers,
+        subtasks=subtasks,
+        checklists=checklists,
+        completed=completed,
+        archived=archived,
         color=color,
         stopwatch=stopwatch,
         timer=timer,
@@ -844,23 +872,23 @@ async def create_task(
         id_task_common=id_task_common,
         id_task_project=id_task_project,
         extension_data=extension_data,
+        workspace=workspace,
         ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_task(
+    task_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one task's full payload (title, description, assigned, stickers, etc.)."""
-    return await get_task_tool(workspace, task_id, ctx)
+    return await get_task_tool(task_id=task_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_tasks_by_date(
-    workspace: WorkspaceParam = "default",
     assigned_to: Annotated[
         Optional[str],
         Field(description="User UUID — server-side filter (fast)."),
@@ -880,6 +908,7 @@ async def get_tasks_by_date(
     ] = None,
     completed_only: Annotated[bool, Field(description="Restrict to completed tasks.")] = False,
     limit: Annotated[int, Field(description="Max tasks fetched before client-side filtering.")] = 5000,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List tasks filtered by date and optional assignee / creator.
@@ -890,13 +919,15 @@ async def get_tasks_by_date(
       get_tasks_by_date(target_date="2026-01-15", completed_only=True).
       get_tasks_by_date(created_by="<uid>") — slow client-side filter.
     """
-    return await get_tasks_by_date_tool(workspace, assigned_to, created_by, target_date, completed_only, limit, ctx)
+    return await get_tasks_by_date_tool(
+        assigned_to=assigned_to, created_by=created_by, target_date=target_date,
+        completed_only=completed_only, limit=limit, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_task(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     title: Annotated[Optional[str], Field(description="New title.")] = None,
     description: Annotated[
         Optional[str],
@@ -963,6 +994,7 @@ async def update_task(
     id_task_common: Annotated[Optional[str], Field(description="Cross-company human ID.")] = None,
     id_task_project: Annotated[Optional[str], Field(description="Per-project human ID.")] = None,
     extension_data: Annotated[Optional[Dict[str, Any]], Field(description="Extension data.")] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update a task. Only passed fields are touched.
@@ -975,20 +1007,19 @@ async def update_task(
     set_task_deadline is a safer helper for deadlines.
     """
     return await update_task_tool(
-        workspace,
-        task_id,
-        title,
-        description,
-        column_id,
-        assigned_users,
-        deadline,
-        time_tracking,
-        stickers,
-        subtasks,
-        checklists,
-        completed,
-        archived,
-        deleted,
+        task_id=task_id,
+        title=title,
+        description=description,
+        column_id=column_id,
+        assigned_users=assigned_users,
+        deadline=deadline,
+        time_tracking=time_tracking,
+        stickers=stickers,
+        subtasks=subtasks,
+        checklists=checklists,
+        completed=completed,
+        archived=archived,
+        deleted=deleted,
         color=color,
         stopwatch=stopwatch,
         timer=timer,
@@ -996,14 +1027,15 @@ async def update_task(
         id_task_common=id_task_common,
         id_task_project=id_task_project,
         extension_data=extension_data,
+        workspace=workspace,
         ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_DELETE)
 async def delete_task(
+    task_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Soft-delete a task (equivalent to update_task(deleted=True)).
@@ -1013,15 +1045,14 @@ async def delete_task(
     REVERSIBLE: update_task(task_id, deleted=False) restores. Deleted tasks
     are hidden from list_tasks unless include_deleted=true is passed.
     """
-    return await update_task_tool(workspace, task_id, deleted=True, ctx=ctx)
+    return await update_task_tool(task_id=task_id, deleted=True, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def set_task_deadline(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     deadline_timestamp: Annotated[
-        Optional[int],
+        int,
         Field(
             description=(
                 "Deadline as Unix timestamp in MILLISECONDS (13 digits). "
@@ -1029,12 +1060,13 @@ async def set_task_deadline(
             ),
             examples=[1653029146646],
         ),
-    ] = None,
+    ],
     start_date_timestamp: Annotated[
         Optional[int],
         Field(description="Optional start date as Unix ms. Seconds auto-promoted."),
     ] = None,
     with_time: Annotated[bool, Field(description="Show time alongside date in the UI.")] = True,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Set or replace a task deadline sticker (safe wrapper).
@@ -1063,15 +1095,16 @@ async def set_task_deadline(
                 await ctx.info(f"Auto-converted start date to ms: {start_date_timestamp}")
         deadline_data["startDate"] = start_date_timestamp
 
-    return await update_task_tool(workspace, task_id, deadline=deadline_data, ctx=ctx)
+    return await update_task_tool(
+        task_id=task_id, deadline=deadline_data, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_DELETE)
 async def remove_task_sticker(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     sticker_type: Annotated[
-        Optional[str],
+        str,
         Field(
             description=(
                 "What to remove: 'deadline' / 'timeTracking' for system "
@@ -1079,7 +1112,8 @@ async def remove_task_sticker(
             ),
             examples=["deadline", "timeTracking", "086866d2-a230-4a4a-8225-e3a9d847b6d0"],
         ),
-    ] = None,
+    ],
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Detach a sticker from a task.
@@ -1089,31 +1123,37 @@ async def remove_task_sticker(
     instead, use update_task(stickers=...) or set_task_deadline.
     """
     if sticker_type == "deadline":
-        return await update_task_tool(workspace, task_id, deadline={"deleted": True}, ctx=ctx)
+        return await update_task_tool(
+            task_id=task_id, deadline={"deleted": True}, workspace=workspace, ctx=ctx,
+        )
     if sticker_type == "timeTracking":
-        return await update_task_tool(workspace, task_id, time_tracking={"deleted": True}, ctx=ctx)
+        return await update_task_tool(
+            task_id=task_id, time_tracking={"deleted": True}, workspace=workspace, ctx=ctx,
+        )
     # Custom sticker — '-' detaches.
-    return await update_task_tool(workspace, task_id, stickers={sticker_type: "-"}, ctx=ctx)
+    return await update_task_tool(
+        task_id=task_id, stickers={sticker_type: "-"}, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_task_chat_subscribers(
+    task_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
     ctx: Context = None,
 ) -> list:
     """List user UUIDs subscribed to a task's chat (receive notifications)."""
-    return await get_task_chat_subscribers_tool(workspace, task_id, ctx)
+    return await get_task_chat_subscribers_tool(task_id=task_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_task_chat_subscribers(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     subscribers: Annotated[
-        Optional[List[str]],
+        List[str],
         Field(description="REPLACEMENT list of user UUIDs (full replacement, not append)."),
-    ] = None,
+    ],
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Replace a task's chat subscriber list.
@@ -1121,7 +1161,9 @@ async def update_task_chat_subscribers(
     NOTE: this is a full replacement. To add a user, read
     get_task_chat_subscribers first and append.
     """
-    return await update_task_chat_subscribers_tool(workspace, task_id, subscribers, ctx)
+    return await update_task_chat_subscribers_tool(
+        task_id=task_id, subscribers=subscribers, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1131,10 +1173,10 @@ async def update_task_chat_subscribers(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_string_stickers(
-    workspace: WorkspaceParam = "default",
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
     offset: Annotated[int, Field(description="Page offset.")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted stickers.")] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List custom string stickers defined in the company.
@@ -1144,13 +1186,16 @@ async def list_string_stickers(
     RETURNS: list of {id, title, type, states} (states is a brief view —
     call get_string_sticker for full state details).
     """
-    return await list_string_stickers_tool(workspace, limit, offset, include_deleted, ctx)
+    return await list_string_stickers_tool(
+        limit=limit, offset=offset, include_deleted=include_deleted,
+        workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_string_sticker(
+    sticker_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    sticker_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one string sticker including all its states.
@@ -1158,38 +1203,42 @@ async def get_string_sticker(
     USE WHEN: you have a sticker_id (from list_string_stickers) and need
     state_ids — for example to set a 'Priority: High' value on a task.
     """
-    return await get_string_sticker_tool(workspace, sticker_id, ctx)
+    return await get_string_sticker_tool(sticker_id=sticker_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_string_sticker_state(
+    sticker_id: UUIDParam,
+    state_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    sticker_id: UUIDParam = None,
-    state_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one state of a string sticker (name, colour, icon)."""
-    return await get_string_sticker_state_tool(workspace, sticker_id, state_id, ctx)
+    return await get_string_sticker_state_tool(
+        sticker_id=sticker_id, state_id=state_id, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_sprint_sticker_state(
+    sticker_id: UUIDParam,
+    state_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    sticker_id: UUIDParam = None,
-    state_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one state of a sprint sticker (sprint interval)."""
-    return await get_sprint_sticker_state_tool(workspace, sticker_id, state_id, ctx)
+    return await get_sprint_sticker_state_tool(
+        sticker_id=sticker_id, state_id=state_id, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def decode_task_stickers(
-    workspace: WorkspaceParam = "default",
     stickers_dict: Annotated[
-        Optional[Dict[str, str]],
+        Dict[str, str],
         Field(description="{sticker_id: state_id} as found on a task.stickers field."),
-    ] = None,
+    ],
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Resolve a {sticker_id: state_id} map to human-readable labels.
@@ -1199,7 +1248,9 @@ async def decode_task_stickers(
     per company; for tasks with >5 stickers prefer caching the output of
     list_string_stickers and resolving labels client-side.
     """
-    return await decode_task_stickers_tool(workspace, stickers_dict, ctx)
+    return await decode_task_stickers_tool(
+        stickers_dict=stickers_dict, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1213,13 +1264,12 @@ async def list_group_chats(
     ctx: Context = None,
 ) -> list:
     """List standalone group chats (not bound to tasks)."""
-    return await list_group_chats_tool(workspace, ctx)
+    return await list_group_chats_tool(workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_group_chat(
-    workspace: WorkspaceParam = "default",
-    title: Annotated[Optional[str], Field(description="Chat title.")] = None,
+    title: Annotated[str, Field(description="Chat title.")],
     users: Annotated[
         Optional[Dict[str, Any]],
         Field(description="{user_id: {'notified': bool}} — required by API."),
@@ -1237,6 +1287,7 @@ async def create_group_chat(
             ),
         ),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a group chat.
@@ -1246,34 +1297,34 @@ async def create_group_chat(
     RETURNS: {id} of the chat.
     """
     return await create_group_chat_tool(
-        workspace, title, users=users, user_role_map=user_role_map,
-        role_config_map=role_config_map, ctx=ctx,
+        title=title, users=users, user_role_map=user_role_map,
+        role_config_map=role_config_map, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_group_chat(
+    chat_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    chat_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one group chat's details."""
-    return await get_group_chat_tool(workspace, chat_id, ctx)
+    return await get_group_chat_tool(chat_id=chat_id, workspace=workspace, ctx=ctx)
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_chat_messages(
-    workspace: WorkspaceParam = "default",
     chat_id: Annotated[
-        Optional[str],
+        str,
         Field(
             description=(
                 "Chat UUID. For task comments, pass the task_id — every task "
                 "has a chat with chat_id == task_id."
             ),
         ),
-    ] = None,
+    ],
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List messages in a chat or task comment thread.
@@ -1281,20 +1332,21 @@ async def get_chat_messages(
     USE WHEN: reading task comments or a group chat history.
     RELATED: get_task_comments is an alias for tasks.
     """
-    return await get_chat_messages_tool(workspace, chat_id, limit, ctx)
+    return await get_chat_messages_tool(
+        chat_id=chat_id, limit=limit, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def send_chat_message(
-    workspace: WorkspaceParam = "default",
     chat_id: Annotated[
-        Optional[str],
+        str,
         Field(description="Chat UUID (= task_id for task comments)."),
-    ] = None,
+    ],
     text: Annotated[
-        Optional[str],
+        str,
         Field(description="Plain text body. Wrapped in <p>...</p> if text_html is not supplied."),
-    ] = None,
+    ],
     text_html: Annotated[
         Optional[str],
         Field(
@@ -1308,6 +1360,7 @@ async def send_chat_message(
         Optional[str],
         Field(description="Short label / quick-link text. Defaults to 'Comment'."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Post a message to a chat or task comment thread.
@@ -1316,32 +1369,35 @@ async def send_chat_message(
     RELATED: add_task_comment is an alias for tasks.
     """
     return await send_chat_message_tool(
-        workspace, chat_id, text, text_html=text_html, label=label, ctx=ctx,
+        chat_id=chat_id, text=text, text_html=text_html, label=label,
+        workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_chat_message(
+    chat_id: UUIDParam,
+    message_id: UUIDParam,
     workspace: WorkspaceParam = "default",
-    chat_id: UUIDParam = None,
-    message_id: UUIDParam = None,
     ctx: Context = None,
 ) -> dict:
     """Get one chat message by ID."""
-    return await get_chat_message_tool(workspace, chat_id, message_id, ctx)
+    return await get_chat_message_tool(
+        chat_id=chat_id, message_id=message_id, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_chat_message(
-    workspace: WorkspaceParam = "default",
-    chat_id: UUIDParam = None,
-    message_id: UUIDParam = None,
+    chat_id: UUIDParam,
+    message_id: UUIDParam,
     label: Annotated[Optional[str], Field(description="New label / quick-link text.")] = None,
     react: Annotated[
         Optional[MessageReact],
         Field(description="Admin reaction emoji (enum of 👍 👎 👏 🙂 😀 😕 🎉 ❤ 🚀 ✔)."),
     ] = None,
     delete: Annotated[bool, Field(description="True = soft-delete the message.")] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update message metadata: label, admin reaction, or soft-delete.
@@ -1350,38 +1406,43 @@ async def update_chat_message(
     metadata. UpdateChatMessageDto exposes only deleted/label/react.
     """
     return await update_chat_message_tool(
-        workspace, chat_id, message_id, label=label, react=react, delete=delete, ctx=ctx,
+        chat_id=chat_id, message_id=message_id, label=label, react=react,
+        delete=delete, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def get_task_comments(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     limit: Annotated[int, Field(description="Page size, default 50.")] = 50,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List comments on a task (alias for get_chat_messages(chat_id=task_id))."""
-    return await get_task_comments_tool(workspace, task_id, limit, ctx)
+    return await get_task_comments_tool(
+        task_id=task_id, limit=limit, workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def add_task_comment(
-    workspace: WorkspaceParam = "default",
-    task_id: UUIDParam = None,
+    task_id: UUIDParam,
     comment: Annotated[
-        Optional[str],
+        str,
         Field(
             description=(
                 "HTML body. Use <br> for newlines (see yougile://guides/html). "
                 "Plain text renders as a single line."
             ),
         ),
-    ] = None,
+    ],
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Post a comment on a task (alias for send_chat_message(chat_id=task_id))."""
-    return await add_task_comment_tool(workspace, task_id, comment, ctx)
+    return await add_task_comment_tool(
+        task_id=task_id, comment=comment, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1391,10 +1452,10 @@ async def add_task_comment(
 
 @mcp.tool(annotations=ANN_READ)
 async def list_webhooks(
-    workspace: WorkspaceParam = "default",
     limit: Annotated[int, Field(description="Page size (client-side, default 50).")] = 50,
     offset: Annotated[int, Field(description="Page offset (client-side).")] = 0,
     include_deleted: Annotated[bool, Field(description="Include soft-deleted webhooks.")] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> list:
     """List webhook subscriptions for the workspace.
@@ -1402,20 +1463,22 @@ async def list_webhooks(
     NOTE: YouGile does not paginate /webhooks server-side; the full list is
     fetched and paginated client-side.
     """
-    return await list_webhooks_tool(workspace, limit, offset, include_deleted, ctx)
+    return await list_webhooks_tool(
+        limit=limit, offset=offset, include_deleted=include_deleted,
+        workspace=workspace, ctx=ctx,
+    )
 
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_webhook(
-    workspace: WorkspaceParam = "default",
-    url: Annotated[Optional[str], Field(description="HTTPS endpoint receiving the event POST.")] = None,
+    url: Annotated[str, Field(description="HTTPS endpoint receiving the event POST.")],
     event: Annotated[
-        Optional[str],
+        str,
         Field(
             description="Event pattern — exact ('task-created') or wildcard ('task-*', '.*').",
             examples=["task-created", "task-updated", "chat-message"],
         ),
-    ] = None,
+    ],
     filters: Annotated[
         Optional[List[Dict[str, Any]]],
         Field(
@@ -1438,6 +1501,7 @@ async def create_webhook(
             ),
         ),
     ] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a webhook subscription.
@@ -1448,23 +1512,27 @@ async def create_webhook(
     If you really do want a firehose, set `allow_unfiltered=True` explicitly.
     """
     return await create_webhook_tool(
-        workspace, url, event, filters or [], allow_unfiltered, ctx
+        url=url, event=event, filters=filters or [],
+        allow_unfiltered=allow_unfiltered, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_UPDATE)
 async def update_webhook(
-    workspace: WorkspaceParam = "default",
-    webhook_id: UUIDParam = None,
+    webhook_id: UUIDParam,
     url: Annotated[Optional[str], Field(description="New target URL.")] = None,
     event: Annotated[Optional[str], Field(description="New event pattern.")] = None,
     filters: Annotated[Optional[List[Dict[str, Any]]], Field(description="Replacement filter list.")] = None,
     disabled: Annotated[Optional[bool], Field(description="True = pause deliveries without deleting.")] = None,
     deleted: Annotated[bool, Field(description="True = soft-delete the subscription.")] = False,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Update or soft-delete a webhook subscription."""
-    return await update_webhook_tool(workspace, webhook_id, url, event, filters, deleted, disabled, ctx)
+    return await update_webhook_tool(
+        webhook_id=webhook_id, url=url, event=event, filters=filters,
+        deleted=deleted, disabled=disabled, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1474,15 +1542,15 @@ async def update_webhook(
 
 @mcp.tool(annotations=ANN_CREATE)
 async def upload_file(
-    workspace: WorkspaceParam = "default",
     path: Annotated[
-        Optional[str],
+        str,
         Field(description="Absolute path to the file on the server filesystem."),
-    ] = None,
+    ],
     filename: Annotated[
         Optional[str],
         Field(description="Optional override for the reported filename."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Upload a file from the server's filesystem to YouGile storage.
@@ -1491,7 +1559,9 @@ async def upload_file(
     comment. Embed the returned URL via <a href="..."> in the HTML body.
     RETURNS: {result, url, fullUrl}.
     """
-    return await upload_file_tool(workspace, path, filename, ctx)
+    return await upload_file_tool(
+        path=path, filename=filename, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1501,9 +1571,8 @@ async def upload_file(
 
 @mcp.tool(annotations=ANN_CREATE)
 async def create_crm_contact(
-    workspace: WorkspaceParam = "default",
-    project_id: Annotated[Optional[str], Field(description="CRM project UUID.")] = None,
-    title: Annotated[Optional[str], Field(description="Contact display name.")] = None,
+    project_id: Annotated[str, Field(description="CRM project UUID.")],
+    title: Annotated[str, Field(description="Contact display name.")],
     position: Annotated[Optional[str], Field(description="Job title / role.")] = None,
     phone: Annotated[Optional[str], Field(description="Primary phone.")] = None,
     email: Annotated[Optional[str], Field(description="Email address.")] = None,
@@ -1513,6 +1582,7 @@ async def create_crm_contact(
         Optional[Dict[str, Any]],
         Field(description="Additional custom fields merged last (overrides on key conflict)."),
     ] = None,
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Create a CRM contact person inside a CRM project.
@@ -1520,22 +1590,23 @@ async def create_crm_contact(
     USE WHEN: registering a new contact before creating a deal task.
     """
     return await create_crm_contact_tool(
-        workspace, project_id, title, position, phone, email,
-        additional_phone, address, fields_extra, ctx,
+        project_id=project_id, title=title, position=position, phone=phone,
+        email=email, additional_phone=additional_phone, address=address,
+        fields_extra=fields_extra, workspace=workspace, ctx=ctx,
     )
 
 
 @mcp.tool(annotations=ANN_READ)
 async def find_crm_contact_by_external_id(
-    workspace: WorkspaceParam = "default",
     provider: Annotated[
-        Optional[str],
+        str,
         Field(description="External provider slug (e.g. 'wazzup').", examples=["wazzup"]),
-    ] = None,
+    ],
     chat_id: Annotated[
-        Optional[str],
+        str,
         Field(description="Provider-side chat / contact identifier."),
-    ] = None,
+    ],
+    workspace: WorkspaceParam = "default",
     ctx: Context = None,
 ) -> dict:
     """Look up a CRM contact by an external messenger ID.
@@ -1544,7 +1615,9 @@ async def find_crm_contact_by_external_id(
     deal, before deciding whether to create_crm_contact.
     RETURNS: contact dict, or None if no match (YouGile 404 → None).
     """
-    return await find_crm_contact_by_external_id_tool(workspace, provider, chat_id, ctx)
+    return await find_crm_contact_by_external_id_tool(
+        provider=provider, chat_id=chat_id, workspace=workspace, ctx=ctx,
+    )
 
 
 # ---------------------------------------------------------------------------

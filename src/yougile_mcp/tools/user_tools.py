@@ -10,10 +10,10 @@ from ...core.registry import registry
 from ...core.client import YouGileClient
 from ...core.exceptions import YouGileError, ValidationError
 from ...api import users
-from ...utils.validation import validate_uuid, validate_email, validate_non_empty_string
+from ...utils.validation import validate_uuid, validate_email
 
 
-async def list_users_tool(workspace: str, ctx: Context) -> List[models.User]:
+async def list_users_tool(workspace: str = "default", ctx: Context = None) -> List[models.User]:
     """Get list of all users in the company."""
     try:
         await ctx.info("Fetching users from YouGile...")
@@ -35,56 +35,47 @@ async def list_users_tool(workspace: str, ctx: Context) -> List[models.User]:
 
 
 async def invite_user_tool(
-    workspace: str,
     email: str,
-    first_name: str,
-    last_name: str,
-    role: str = "user",
-    departments: List[str] = None,
-    ctx: Context = None
-) -> models.User:
-    """Invite a new user to the company."""
+    is_admin: bool = False,
+    workspace: str = "default",
+    ctx: Context = None,
+) -> Dict[str, Any]:
+    """Invite a new user to the company.
+
+    YouGile CreateUserDto accepts only ``email`` (required) and ``isAdmin``
+    (optional). Identity fields (first/last name, departments) are NOT
+    settable via API v2 — the invitee provides those after accepting the
+    invite, or an admin edits them in the web UI.
+    """
     try:
-        await ctx.info(f"Inviting user: {email}")
-        
+        if ctx:
+            await ctx.info(f"Inviting user: {email}")
+
         # Validate inputs
         email = validate_email(email)
-        first_name = validate_non_empty_string(first_name, "first_name")
-        last_name = validate_non_empty_string(last_name, "last_name")
-        role = validate_non_empty_string(role, "role")
-        
-        if departments:
-            departments = [validate_uuid(dept_id, "department_id") for dept_id in departments]
-        
-        user_data = {
-            "email": email,
-            "realName": f"{first_name} {last_name}",
-            "firstName": first_name,
-            "lastName": last_name,
-            "role": role,
-            "departments": departments or []
-        }
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
-            result = await users.invite_user(client, user_data)
-            
-        user = models.User(**result)
-        
-        await ctx.info(f"Successfully invited user: {email}")
-        return user
-        
+            result = await users.invite_user(client, email=email, is_admin=is_admin)
+
+        if ctx:
+            await ctx.info(f"Successfully invited user: {email}")
+        return result
+
     except ValidationError as e:
-        await ctx.error(f"Validation failed: {e.message}")
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
         raise
     except YouGileError as e:
-        await ctx.error(f"API error while inviting user: {e.message}")
+        if ctx:
+            await ctx.error(f"API error while inviting user: {e.message}")
         raise
     except Exception as e:
-        await ctx.error(f"Unexpected error: {str(e)}")
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
         raise
 
 
-async def get_user_tool(workspace: str, user_id: str, ctx: Context) -> models.User:
+async def get_user_tool(user_id: str, workspace: str = "default", ctx: Context = None) -> models.User:
     """Get detailed information about a specific user."""
     try:
         await ctx.info(f"Fetching user details: {user_id}")
@@ -111,75 +102,50 @@ async def get_user_tool(workspace: str, user_id: str, ctx: Context) -> models.Us
 
 
 async def update_user_tool(
-    workspace: str,
     user_id: str,
-    first_name: str = None,
-    last_name: str = None,
-    role: str = None,
-    departments: List[str] = None,
-    ctx: Context = None
+    is_admin: bool,
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> models.User:
-    """Update user information."""
+    """Update user admin flag.
+
+    YouGile UpdateUserDto exposes only ``isAdmin``. Other identity fields
+    (first/last name, departments, email) are NOT settable via API v2.
+    """
     try:
-        await ctx.info(f"Updating user: {user_id}")
-        
+        if ctx:
+            await ctx.info(f"Updating user: {user_id}")
+
         user_id = validate_uuid(user_id, "user_id")
-        
-        # Build update data with only provided fields
-        user_data = {}
-        
-        if first_name is not None:
-            first_name = validate_non_empty_string(first_name, "first_name")
-            user_data["firstName"] = first_name
-            
-        if last_name is not None:
-            last_name = validate_non_empty_string(last_name, "last_name")
-            user_data["lastName"] = last_name
-            
-        if first_name or last_name:
-            # Update realName if either name component changed
-            real_name_parts = []
-            if first_name:
-                real_name_parts.append(first_name)
-            if last_name:
-                real_name_parts.append(last_name)
-            user_data["realName"] = " ".join(real_name_parts)
-            
-        if role is not None:
-            role = validate_non_empty_string(role, "role")
-            user_data["role"] = role
-            
-        if departments is not None:
-            departments = [validate_uuid(dept_id, "department_id") for dept_id in departments]
-            user_data["departments"] = departments
-            
-        if not user_data:
-            raise ValidationError("At least one field must be provided for update")
-        
+
         async with YouGileClient(registry.get(workspace)) as client:
             # Update user (returns minimal response with just ID)
-            await users.update_user(client, user_id, user_data)
-            
+            await users.update_user(client, user_id, is_admin=is_admin)
+
             # Fetch complete user data after update
             result = await users.get_user(client, user_id)
-            
+
         user = models.User(**result)
-        
-        await ctx.info(f"Successfully updated user: {user.real_name}")
+
+        if ctx:
+            await ctx.info(f"Successfully updated user: {user.real_name}")
         return user
-        
+
     except ValidationError as e:
-        await ctx.error(f"Validation failed: {e.message}")
+        if ctx:
+            await ctx.error(f"Validation failed: {e.message}")
         raise
     except YouGileError as e:
-        await ctx.error(f"API error while updating user: {e.message}")
+        if ctx:
+            await ctx.error(f"API error while updating user: {e.message}")
         raise
     except Exception as e:
-        await ctx.error(f"Unexpected error: {str(e)}")
+        if ctx:
+            await ctx.error(f"Unexpected error: {str(e)}")
         raise
 
 
-async def get_me_tool(workspace: str, ctx: Context = None) -> Dict[str, Any]:
+async def get_me_tool(workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Get the user account associated with the workspace's API key.
 
     Useful for resolving the current bot/user identity (e.g. to filter tasks
@@ -209,7 +175,7 @@ async def get_me_tool(workspace: str, ctx: Context = None) -> Dict[str, Any]:
         raise
 
 
-async def remove_user_tool(workspace: str, user_id: str, ctx: Context) -> Dict[str, Any]:
+async def remove_user_tool(user_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Remove user from the company."""
     try:
         await ctx.info(f"Removing user: {user_id}")

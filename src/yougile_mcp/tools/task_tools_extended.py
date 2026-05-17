@@ -15,7 +15,6 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def update_task_tool(
-    workspace: str,
     task_id: str,
     title: str = None,
     description: str = None,
@@ -36,7 +35,8 @@ async def update_task_tool(
     id_task_common: Optional[str] = None,
     id_task_project: Optional[str] = None,
     extension_data: Optional[Dict[str, Any]] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Update task information. Description requires HTML format.
 
@@ -188,7 +188,7 @@ async def update_task_tool(
         raise
 
 
-async def get_task_chat_subscribers_tool(workspace: str, task_id: str, ctx: Context) -> List[models.User]:
+async def get_task_chat_subscribers_tool(task_id: str, workspace: str = "default", ctx: Context = None) -> List[models.User]:
     """Get list of users subscribed to task chat."""
     try:
         await ctx.info(f"Fetching chat subscribers for task: {task_id}")
@@ -215,10 +215,10 @@ async def get_task_chat_subscribers_tool(workspace: str, task_id: str, ctx: Cont
 
 
 async def update_task_chat_subscribers_tool(
-    workspace: str,
     task_id: str,
     subscribers: List[str],
-    ctx: Context
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Update task chat subscribers list."""
     try:

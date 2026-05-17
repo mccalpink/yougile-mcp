@@ -14,13 +14,13 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_boards_tool(
-    workspace: str,
     project_id: Optional[str] = None,
     title: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[models.Board]:
     """Get list of boards with optional filtering.
     
@@ -68,12 +68,12 @@ async def list_boards_tool(
 
 
 async def create_board_tool(
-    workspace: str,
     title: str,
     project_id: str,
     workflow_id: str = None,
     stickers: Optional[Dict[str, Any]] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> models.CreatedEntity:
     """Create a new board in a project.
 
@@ -130,7 +130,7 @@ async def create_board_tool(
         raise
 
 
-async def get_board_tool(workspace: str, board_id: str, ctx: Context) -> models.Board:
+async def get_board_tool(board_id: str, workspace: str = "default", ctx: Context = None) -> models.Board:
     """Get detailed information about a specific board."""
     try:
         await ctx.info(f"Fetching board details: {board_id}")
@@ -157,13 +157,13 @@ async def get_board_tool(workspace: str, board_id: str, ctx: Context) -> models.
 
 
 async def update_board_tool(
-    workspace: str,
     board_id: str,
     title: str = None,
     workflow_id: str = None,
     stickers: Optional[Dict[str, Any]] = None,
     deleted: Optional[bool] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> models.Board:
     """Update board information.
 

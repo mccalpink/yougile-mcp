@@ -52,10 +52,10 @@ def _validate_filters(filters: Any, field: str = "filters") -> List[Dict[str, An
 
 
 async def list_webhooks_tool(
-    workspace: str,
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """List configured webhook subscriptions for the workspace.
@@ -101,11 +101,11 @@ async def list_webhooks_tool(
 
 
 async def create_webhook_tool(
-    workspace: str,
     url: str,
     event: str,
     filters: Optional[List[Dict[str, Any]]] = None,
     allow_unfiltered: bool = False,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a webhook subscription.
@@ -168,13 +168,13 @@ async def create_webhook_tool(
 
 
 async def update_webhook_tool(
-    workspace: str,
     webhook_id: str,
     url: Optional[str] = None,
     event: Optional[str] = None,
     filters: Optional[List[Dict[str, Any]]] = None,
     deleted: bool = False,
     disabled: Optional[bool] = None,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Update or soft-delete a webhook subscription.

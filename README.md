@@ -75,6 +75,67 @@ pip install -r requirements.txt
 
 Используйте аналогичную конфигурацию для Continue, Cline и других MCP-совместимых помощников.
 
+## HTTP transport (multi-client setup)
+
+Running stdio per Claude/Cursor session costs ~90 MB each. For 5+
+concurrent sessions, run one long-lived HTTP server and point every
+client at its URL:
+
+    YOUGILE_TRANSPORT=http python run_server.py
+    # or
+    python run_server.py --http
+
+Defaults: `127.0.0.1:3000/mcp` (override via `YOUGILE_HOST`,
+`YOUGILE_PORT`, `YOUGILE_HTTP_PATH`).
+
+MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "yougile": { "url": "http://localhost:3000/mcp" }
+  }
+}
+```
+
+## Multi-tenant workspaces
+
+One MCP server can hold API keys for multiple YouGile companies. Add
+one env var per company:
+
+    YOUGILE_KEY_MAIN=xxx           # required, defines workspace 'main'
+    YOUGILE_LABEL_MAIN="Личная"     # optional, human-readable label
+    YOUGILE_COMPANY_MAIN=<uuid>     # optional, for /auth/* re-init
+
+    YOUGILE_KEY_TEAM=yyy
+    YOUGILE_LABEL_TEAM="Стартап X"
+
+Every data tool takes a `workspace` parameter (default `"default"`).
+Use `list_workspaces` from the LLM to discover configured slugs.
+
+The legacy single-tenant `YOUGILE_API_KEY` (+ optional
+`YOUGILE_COMPANY_ID`) still works — it's mapped to slug `default`.
+
+## Security note: upload_file path allowlist
+
+`upload_file` can read any file on the server filesystem. To prevent
+agents from exfiltrating `.env`, SSH keys, or other secrets, paths
+are restricted by default to the user's home directory (`~/`).
+Override with:
+
+    YOUGILE_UPLOAD_ROOTS=/srv/data:/var/uploads
+
+Dotfiles and paths matching `credentials`, `secret`, `password`,
+`.env`, `.ssh`, `private_key` (case-insensitive) are always blocked.
+
+## Personal Claude skill
+
+A starter skill that pairs with this MCP lives at
+`templates/yougile-personal-skill/`. Copy `SKILL.md` to
+`~/.claude/skills/yougile-personal/SKILL.md` and fill the
+placeholders to give Claude per-session context (workspace slugs,
+project shortcuts, sticker maps).
+
 ## 🎯 Как использовать с AI помощником
 
 После подключения можно просить AI помощника:

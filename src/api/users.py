@@ -19,9 +19,17 @@ async def get_me(client: YouGileClient) -> Dict[str, Any]:
     return await client.get("/users/me")
 
 
-async def invite_user(client: YouGileClient, user_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Invite user to company."""
-    return await client.post("/users", json=user_data)
+async def invite_user(client: YouGileClient, email: str, is_admin: bool = False) -> Dict[str, Any]:
+    """Invite user to company.
+
+    API contract (CreateUserDto): required ``email`` only; optional ``isAdmin``.
+    Other identity fields (name, departments) are not settable via API v2 —
+    they're managed by the invitee or in the YouGile web UI.
+    """
+    body: Dict[str, Any] = {"email": email}
+    if is_admin:
+        body["isAdmin"] = True
+    return await client.post("/users", json=body)
 
 
 async def get_user(client: YouGileClient, user_id: str) -> Dict[str, Any]:
@@ -30,10 +38,14 @@ async def get_user(client: YouGileClient, user_id: str) -> Dict[str, Any]:
     return await client.get(f"/users/{user_id}")
 
 
-async def update_user(client: YouGileClient, user_id: str, user_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Update user."""
+async def update_user(client: YouGileClient, user_id: str, is_admin: bool) -> Dict[str, Any]:
+    """Update user.
+
+    API contract (UpdateUserDto): only ``isAdmin`` is settable. Other fields
+    silently fall through.
+    """
     user_id = validate_uuid(user_id, "user_id")
-    return await client.put(f"/users/{user_id}", json=user_data)
+    return await client.put(f"/users/{user_id}", json={"isAdmin": is_admin})
 
 
 async def delete_user(client: YouGileClient, user_id: str) -> Dict[str, Any]:

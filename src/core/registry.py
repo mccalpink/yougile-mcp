@@ -20,6 +20,7 @@ Examples:
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from .auth import AuthManager
@@ -30,6 +31,31 @@ _LABEL_RE = re.compile(r"^YOUGILE_LABEL_(.+)$")
 _COMPANY_RE = re.compile(r"^YOUGILE_COMPANY_(.+)$")
 
 LEGACY_SLUG = "default"
+
+
+def _load_env_with_dotenv() -> dict:
+    """Merge process env with .env file values. Process env wins on conflict.
+
+    Without this, ``AuthRegistry`` would only see variables that the shell
+    exported. Pydantic Settings reads ``.env`` into its own instance but does
+    *not* mutate ``os.environ``, so the registry would miss every
+    ``YOUGILE_KEY_*`` defined only in ``.env``.
+    """
+    merged: dict = {}
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        try:
+            from dotenv import dotenv_values
+
+            for k, v in dotenv_values(env_path).items():
+                if v is not None:
+                    merged[k] = v
+        except ImportError:
+            # python-dotenv not installed; rely on real env only
+            pass
+    # Real environment always wins over .env values
+    merged.update(os.environ)
+    return merged
 
 
 class WorkspaceNotConfiguredError(ValidationError):
@@ -73,7 +99,7 @@ class AuthRegistry:
     def __init__(self, env: Optional[dict] = None) -> None:
         self._managers: dict[str, AuthManager] = {}
         self._labels: dict[str, Optional[str]] = {}
-        self._load(env if env is not None else os.environ)
+        self._load(env if env is not None else _load_env_with_dotenv())
 
     # ----- public API -----
 
@@ -108,7 +134,7 @@ class AuthRegistry:
         """Drop existing state and re-read environment. Mainly for tests."""
         self._managers.clear()
         self._labels.clear()
-        self._load(env if env is not None else os.environ)
+        self._load(env if env is not None else _load_env_with_dotenv())
 
     # ----- helpers -----
 

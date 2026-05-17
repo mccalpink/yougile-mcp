@@ -16,10 +16,10 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_task_summaries_tool(
-    workspace: str,
     limit: int = 50,
     offset: int = 0,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get list of task summaries with pagination.
     
@@ -49,14 +49,14 @@ async def list_task_summaries_tool(
 
 
 async def list_tasks_tool(
-    workspace: str,
     column_id: Optional[str] = None,
     assigned_to: Optional[str] = None,
     title: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get detailed list of tasks with optional filtering.
     
@@ -116,7 +116,6 @@ async def list_tasks_tool(
 
 
 async def create_task_tool(
-    workspace: str,
     title: str,
     column_id: Optional[str] = None,
     description: str = None,
@@ -135,7 +134,8 @@ async def create_task_tool(
     id_task_common: Optional[str] = None,
     id_task_project: Optional[str] = None,
     extension_data: Optional[Dict[str, Any]] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a new task. Returns the task ID. Description requires HTML format.
 
@@ -276,7 +276,7 @@ async def create_task_tool(
         raise
 
 
-async def get_task_tool(workspace: str, task_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_task_tool(task_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Get detailed information about a specific task."""
     try:
         if ctx:
@@ -306,13 +306,13 @@ async def get_task_tool(workspace: str, task_id: str, ctx: Context) -> Dict[str,
 
 
 async def get_tasks_by_date_tool(
-    workspace: str,
     assigned_to: Optional[str] = None,
     created_by: Optional[str] = None,
     target_date: Optional[str] = None,
     completed_only: bool = False,
     limit: int = 5000,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get tasks filtered by date and completion status.
     

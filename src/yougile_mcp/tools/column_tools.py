@@ -14,9 +14,9 @@ from ...utils.validation import validate_uuid, validate_non_empty_string
 
 
 async def list_columns_tool(
-    workspace: str,
     board_id: Optional[str] = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get list of columns with optional filtering by board.
     
@@ -48,11 +48,11 @@ async def list_columns_tool(
 
 
 async def create_column_tool(
-    workspace: str,
     title: str,
     board_id: str,
     color: int = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a new column in a board."""
     try:
@@ -89,7 +89,7 @@ async def create_column_tool(
         raise
 
 
-async def get_column_tool(workspace: str, column_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_column_tool(column_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Get detailed information about a specific column."""
     try:
         await ctx.info(f"Fetching column details: {column_id}")
@@ -114,11 +114,11 @@ async def get_column_tool(workspace: str, column_id: str, ctx: Context) -> Dict[
 
 
 async def update_column_tool(
-    workspace: str,
     column_id: str,
     title: str = None,
     color: int = None,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Update column information."""
     try:

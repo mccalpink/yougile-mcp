@@ -13,11 +13,11 @@ from ...utils.validation import validate_uuid
 
 
 async def list_string_stickers_tool(
-    workspace: str,
     limit: int = 50,
     offset: int = 0,
     include_deleted: bool = False,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> List[Dict[str, Any]]:
     """Get list of string (custom) stickers with their basic information."""
     try:
@@ -44,7 +44,7 @@ async def list_string_stickers_tool(
         raise
 
 
-async def get_string_sticker_tool(workspace: str, sticker_id: str, ctx: Context = None) -> Dict[str, Any]:
+async def get_string_sticker_tool(sticker_id: str, workspace: str = "default", ctx: Context = None) -> Dict[str, Any]:
     """Get detailed information about a specific string sticker including its states."""
     try:
         if ctx:
@@ -74,10 +74,10 @@ async def get_string_sticker_tool(workspace: str, sticker_id: str, ctx: Context 
 
 
 async def get_string_sticker_state_tool(
-    workspace: str,
     sticker_id: str,
     state_id: str,
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Any]:
     """Get information about a specific state of a string sticker."""
     try:
@@ -112,9 +112,9 @@ async def get_string_sticker_state_tool(
 
 
 async def get_sprint_sticker_state_tool(
-    workspace: str,
     sticker_id: str,
     state_id: str,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Get information about a specific state of a sprint sticker."""
@@ -151,9 +151,9 @@ async def get_sprint_sticker_state_tool(
 
 
 async def decode_task_stickers_tool(
-    workspace: str,
     stickers_dict: Dict[str, str],
-    ctx: Context = None
+    workspace: str = "default",
+    ctx: Context = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Decode task stickers dictionary into readable sticker and state information."""
     try:

@@ -92,9 +92,9 @@ def _validate_upload_path(path: str) -> Path:
 
 
 async def upload_file_tool(
-    workspace: str,
     path: str,
     filename: Optional[str] = None,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Upload a local file to YouGile.

@@ -20,7 +20,6 @@ _CONTACT_FIELD_KEYS = {"position", "phone", "additionalPhone", "email", "address
 
 
 async def create_crm_contact_tool(
-    workspace: str,
     project_id: str,
     title: str,
     position: Optional[str] = None,
@@ -29,6 +28,7 @@ async def create_crm_contact_tool(
     additional_phone: Optional[str] = None,
     address: Optional[str] = None,
     fields_extra: Optional[Dict[str, Any]] = None,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Dict[str, Any]:
     """Create a CRM contact person inside a CRM project.
@@ -96,9 +96,9 @@ async def create_crm_contact_tool(
 
 
 async def find_crm_contact_by_external_id_tool(
-    workspace: str,
     provider: str,
     chat_id: str,
+    workspace: str = "default",
     ctx: Context = None,
 ) -> Optional[Dict[str, Any]]:
     """Find a CRM contact by external messenger ID.

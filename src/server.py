@@ -104,6 +104,7 @@ from .yougile_mcp.resources.api_docs import (
     get_html_guide,
 )
 from .yougile_mcp.tools.meta_tools import describe_response_impl, setup_yougile_skill_impl
+from .yougile_mcp.resources.skill_template import get_skill_template_content
 from .yougile_mcp.prompts.workflow_prompts import (
     create_task_workflow_prompt,
     daily_standup_prompt,
@@ -1954,6 +1955,17 @@ def api_endpoints() -> str:
 def html_guide() -> str:
     """HTML formatting reference for task descriptions and chat messages."""
     return get_html_guide()
+
+
+@mcp.resource("yougile://skill-template")
+async def skill_template_resource(ctx: Context) -> str:
+    """Canonical link to the SKILL.md template for personal workflow configuration.
+
+    Use this resource to inspect the skill template BEFORE running setup_yougile_skill.
+    The template lives at templates/yougile-personal-skill/SKILL.md in the MCP source.
+    Read it to understand the briefing.md structure you're about to create.
+    """
+    return get_skill_template_content()
 
 
 # ---------------------------------------------------------------------------

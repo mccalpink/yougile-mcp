@@ -7,7 +7,9 @@
 """
 from __future__ import annotations
 
+import filecmp
 import os
+import shutil
 from pathlib import Path
 
 from ...utils.schema_catalog import get_entity_schema, get_all_entities
@@ -102,6 +104,7 @@ def _describe_entity(schema: dict, verbosity: str) -> dict:
 
 _DEFAULT_MEMORY_DIR = Path.home() / ".agents" / "skills" / "yougile-personal"
 _BRIEFING_FILENAME = "briefing.md"
+_TEMPLATE_DIR = Path(__file__).parents[3] / "templates" / "yougile-personal-skill"
 
 _SETUP_QUESTIONS = [
     "1. Какие YouGile-компании (воркспейсы) вы используете? "
@@ -126,32 +129,69 @@ _SETUP_QUESTIONS = [
 ]
 
 
+def _copy_dir_idempotent(src: Path, dst: Path) -> tuple[list[str], list[str]]:
+    """
+    Копирует содержимое src/ в dst/ с проверкой идемпотентности через filecmp.
+
+    Файлы с одинаковым содержимым пропускаются.
+    Файлы с изменённым содержимым перезаписываются (статичные ссылки — не пользовательский контент).
+
+    Returns:
+        Кортеж (installed, skipped) — списки имён файлов.
+    """
+    dst.mkdir(parents=True, exist_ok=True)
+    installed: list[str] = []
+    skipped: list[str] = []
+
+    for src_file in sorted(src.iterdir()):
+        if not src_file.is_file():
+            continue
+        dst_file = dst / src_file.name
+        if dst_file.exists() and filecmp.cmp(str(src_file), str(dst_file), shallow=False):
+            skipped.append(src_file.name)
+        else:
+            shutil.copy2(str(src_file), str(dst_file))
+            installed.append(src_file.name)
+
+    return installed, skipped
+
+
 async def setup_yougile_skill_impl(
     memory_dir: str | None = None,
 ) -> dict:
     """
     Возвращает список вопросов и параметры для создания персонализированного briefing.md.
+    Также копирует references/ и templates/ из template-директории в memory_dir.
 
     Не выполняет интерактивную логику — это делает агент (Claude).
-    Тул только описывает что нужно сделать и где сохранять.
+    Тул описывает что нужно сделать и копирует статичные справочные файлы.
 
     Args:
-        memory_dir: Путь для сохранения briefing.md.
+        memory_dir: Путь для сохранения briefing.md и справочных файлов.
                     По умолчанию: ~/.agents/skills/yougile-personal/
 
     Returns:
-        dict с ключами: questions, target_path, template_path, existing_briefing, instructions.
+        dict с ключами: questions, target_path, template_path, existing_briefing, instructions,
+                        references_installed, templates_installed.
     """
     target_dir = Path(memory_dir) if memory_dir else _DEFAULT_MEMORY_DIR
     target_path = target_dir / _BRIEFING_FILENAME
 
     existing = target_path.exists() and target_path.stat().st_size > 0
 
-    template_path = (
-        Path(__file__).parents[4] / "templates" / "yougile-personal-skill" / "briefing.template.md"
+    template_path = _TEMPLATE_DIR / "templates" / "briefing.template.md"
+
+    # Копируем references/ — не трогаем SKILL.md (устанавливается отдельно)
+    refs_installed, refs_skipped = _copy_dir_idempotent(
+        src=_TEMPLATE_DIR / "references",
+        dst=target_dir / "references",
+    )
+    tpls_installed, tpls_skipped = _copy_dir_idempotent(
+        src=_TEMPLATE_DIR / "templates",
+        dst=target_dir / "templates",
     )
 
-    return {
+    result: dict = {
         "questions": _SETUP_QUESTIONS,
         "target_path": str(target_path),
         "template_path": str(template_path),
@@ -162,4 +202,13 @@ async def setup_yougile_skill_impl(
             "Save the completed briefing.md to target_path. "
             "If existing_briefing is True — ask user: 'Back up and overwrite?' before saving."
         ),
+        "references_installed": refs_installed + refs_skipped,
+        "templates_installed": tpls_installed + tpls_skipped,
     }
+
+    if refs_skipped:
+        result["references_skipped_unchanged"] = refs_skipped
+    if tpls_skipped:
+        result["templates_skipped_unchanged"] = tpls_skipped
+
+    return result

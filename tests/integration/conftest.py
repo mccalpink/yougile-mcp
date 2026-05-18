@@ -8,13 +8,6 @@ import os
 import pytest
 
 
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "integration: требует живой YouGile API ключ (YOUGILE_TEST_API_KEY)"
-    )
-
-
 @pytest.fixture(scope="session")
 def api_key():
     """API ключ для integration тестов."""

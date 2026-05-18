@@ -15,9 +15,14 @@ from src.core.exceptions import WorkspaceNotConfiguredError
 pytestmark = pytest.mark.integration
 
 
+class FakeSession:
+    """Заглушка ServerSession для тестов: поддерживает __weakref__ (в отличие
+    от bare object()), чем удовлетворяет ключу WeakKeyDictionary."""
+
+
 def make_session():
-    """Возвращает новый объект сессии с уникальным id."""
-    return object()
+    """Возвращает новый weakref-совместимый объект сессии."""
+    return FakeSession()
 
 
 def make_ctx(session_obj):
@@ -59,28 +64,28 @@ class TestActiveWorkspaceIntegration:
         """
         session_obj = make_session()
         ctx = make_ctx(session_obj)
-        set_active(id(session_obj), "main")
+        set_active(session_obj, "main")
         result = resolve_workspace(None, ctx, mock_registry)
         assert result == "main"
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_different_sessions_isolated(self, mock_registry):
         """
-        Два клиента с разными session_id не влияют друг на друга.
+        Два клиента с разными session объектами не влияют друг на друга.
         """
         session_1 = make_session()
         session_2 = make_session()
         ctx_1 = make_ctx(session_1)
         ctx_2 = make_ctx(session_2)
 
-        set_active(id(session_1), "main")
-        set_active(id(session_2), "team")
+        set_active(session_1, "main")
+        set_active(session_2, "team")
 
         assert resolve_workspace(None, ctx_1, mock_registry) == "main"
         assert resolve_workspace(None, ctx_2, mock_registry) == "team"
 
-        clear_active(id(session_1))
-        clear_active(id(session_2))
+        clear_active(session_1)
+        clear_active(session_2)
 
     def test_explicit_workspace_overrides_session_active(self, mock_registry):
         """
@@ -89,12 +94,12 @@ class TestActiveWorkspaceIntegration:
         """
         session_obj = make_session()
         ctx = make_ctx(session_obj)
-        set_active(id(session_obj), "main")
+        set_active(session_obj, "main")
 
         result = resolve_workspace("team", ctx, mock_registry)
         assert result == "team"
 
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_no_session_active_uses_default(self, mock_registry):
         """
@@ -112,12 +117,12 @@ class TestActiveWorkspaceIntegration:
         """
         session_obj = make_session()
         ctx = make_ctx(session_obj)
-        set_active(id(session_obj), "main")
+        set_active(session_obj, "main")
 
         result = resolve_workspace("default", ctx, mock_registry)
         assert result == "default"
 
-        clear_active(id(session_obj))
+        clear_active(session_obj)
 
     def test_set_active_workspace_tool_stores_and_returns(self, mock_registry, mcp_tools):
         """
@@ -128,8 +133,8 @@ class TestActiveWorkspaceIntegration:
         fn = mcp_tools['set_active_workspace'].fn
         result = asyncio.get_event_loop().run_until_complete(fn(slug="team", ctx=ctx))
         assert result["active_workspace"] == "team"
-        assert get_active(id(session_obj)) == "team"
-        clear_active(id(session_obj))
+        assert get_active(session_obj) == "team"
+        clear_active(session_obj)
 
     def test_get_active_workspace_tool_reflects_state(self, mock_registry, mcp_tools):
         """
@@ -145,4 +150,4 @@ class TestActiveWorkspaceIntegration:
 
         assert result["active_workspace"] == "main"
         assert result["effective_workspace"] == "main"
-        clear_active(id(session_obj))
+        clear_active(session_obj)

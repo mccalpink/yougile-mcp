@@ -262,12 +262,24 @@ _INCLUDE_KEYS: dict = {
     "timestamps": {"fields": ["timestamp", "archivedTimestamp", "completedTimestamp"], "dto": "task"},
 }
 
-# Все зарегистрированные opt-in ключи (для include=["all"])
-_ALL_INCLUDE_KEYS: set = set(_INCLUDE_KEYS.keys())
+def _keys_for_dto(dto_type: str) -> set:
+    """Множество include-ключей, валидных для конкретного dto_type.
+
+    Ключи без явного ``spec["dto"]`` считаются глобально валидными
+    (резерв на будущее — сейчас все включи привязаны к entity).
+    """
+    return {
+        k for k, spec in _INCLUDE_KEYS.items()
+        if spec.get("dto") in (None, dto_type)
+    }
 
 
 def apply_includes(obj: dict, source: dict, include: list, dto_type: str) -> tuple:
     """Добавляет поля из include[] к уже отфильтрованному obj.
+
+    Spec §1.3: include[] ключ валиден для конкретной entity. Известный
+    глобально, но не привязанный к ``dto_type`` (например ``deadline_history``
+    у webhook) — попадает в ``unknown_includes``, а не silent no-op.
 
     Args:
         obj: уже отфильтрованный объект (после custom/compact strip).
@@ -276,10 +288,11 @@ def apply_includes(obj: dict, source: dict, include: list, dto_type: str) -> tup
         dto_type: тип DTO для разрешения специальных ключей.
 
     Returns:
-        (обновлённый obj, список неизвестных ключей)
+        (обновлённый obj, список неизвестных ключей для данного dto_type)
     """
     unknown: list = []
-    effective_keys = _ALL_INCLUDE_KEYS if "all" in include else include
+    valid_keys_for_dto = _keys_for_dto(dto_type)
+    effective_keys = valid_keys_for_dto if "all" in include else include
 
     for key in effective_keys:
         if key == "all":
@@ -287,6 +300,11 @@ def apply_includes(obj: dict, source: dict, include: list, dto_type: str) -> tup
 
         if key in _INCLUDE_KEYS:
             spec = _INCLUDE_KEYS[key]
+            # Ключ зарегистрирован, но привязан к другой entity — для текущего
+            # dto_type это unknown (не silent no-op).
+            if spec.get("dto") not in (None, dto_type):
+                unknown.append(key)
+                continue
             nested = spec.get("nested")
             if nested:
                 # Вложенное поле: например deadline.history

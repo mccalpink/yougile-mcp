@@ -75,7 +75,6 @@ pip install -r requirements.txt
 
 Используйте аналогичную конфигурацию для Continue, Cline и других MCP-совместимых помощников.
 
-<!-- [наша секция] -->
 ## Multi-tenant: переменные окружения
 
 Для работы с несколькими YouGile-аккаунтами задайте ключи через env:
@@ -100,9 +99,7 @@ YOUGILE_COMPANY_MAIN=00000000-0000-0000-0000-000000000000
 
 Устаревший формат `YOUGILE_API_KEY` по-прежнему работает и маппится
 на слаг `default`.
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## HTTP transport (многопользовательский режим)
 
 Запуск stdio на каждую сессию Claude/Cursor стоит ~90 МБ. При 5+ сессиях
@@ -124,9 +121,7 @@ YOUGILE_COMPANY_MAIN=00000000-0000-0000-0000-000000000000
   }
 }
 ```
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## Несколько компаний (multi-tenant)
 
 Один MCP-сервер может хранить API-ключи для нескольких YouGile-компаний.
@@ -145,9 +140,7 @@ YOUGILE_COMPANY_MAIN=00000000-0000-0000-0000-000000000000
 
 Устаревший формат `YOUGILE_API_KEY` (+ `YOUGILE_COMPANY_ID`) по-прежнему работает
 и маппится на слаг `default`.
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## Активная компания (per-session)
 
 Чтобы не передавать `workspace` в каждый вызов тула, установи активную компанию
@@ -181,9 +174,7 @@ list_projects(workspace="team")  # → team (явный override)
 ```
 
 **Примечание:** Active workspace не персистентен — сбрасывается при перезапуске MCP сервера.
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## Безопасность: ограничения upload_file
 
 `upload_file` может читать любой файл на сервере. Чтобы агенты не могли
@@ -194,9 +185,7 @@ exfiltrate `.env`, SSH-ключи и другие секреты, пути ог�
 
 Dotfiles и пути, содержащие `credentials`, `secret`, `password`, `.env`,
 `.ssh`, `private_key` (без учёта регистра), всегда заблокированы.
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## Управление verbosity ответов
 
 Все read-тулы (`list_*`, `get_*`) принимают параметр `verbosity`:
@@ -239,46 +228,64 @@ describe_response(entity="task", verbosity="full")
   ]
 }
 ```
-<!-- [/наша секция] -->
 
-<!-- [наша секция] -->
 ## Персональный скилл для Claude
 
-Шаблон скилла, парный к этому MCP, находится в
-`templates/yougile-personal-skill/`. Скилл даёт Claude per-session контекст:
+Шаблон скилла, парный к этому MCP, лежит в
+`templates/yougile-personal-skill/` и состоит из `SKILL.md`,
+`references/*` и `templates/*`. Скилл даёт Claude per-session контекст:
 слаги воркспейсов, UUID проектов, шорткаты стикеров, routing rules.
 
-**Без скилла:** Claude делает 2-3 лишних API-вызова на каждый запрос (lookup
-проектов, досок, колонок). **Со скиллом:** UUID уже в контексте → напрямую к делу.
+**Без скилла:** Claude делает 2-3 лишних API-вызова на каждый запрос
+(lookup проектов, досок, колонок). **Со скиллом:** UUID уже в
+контексте → напрямую к делу.
 
-### Быстрый старт
+### Установка через агента (manifest-based)
+
+Сам MCP-сервер на пользовательский диск **не пишет**. Каждый файл
+шаблона опубликован как MCP-ресурс — агент читает их через
+`resources/read` и записывает локально своим Write-tool (под обычными
+permissions клиента, без env-override и без allowlist на стороне
+сервера).
 
 ```bash
-# Инициализировать персональный брифинг через MCP:
+# 1. Тул возвращает манифест: questions + default_target_dir + files[]
+#    с (uri, target, sha256) для каждого файла шаблона.
 setup_yougile_skill
 
-# Или прочитать шаблон перед началом:
-# resource: yougile://skill-template
+# 2. Агент читает каждый files[i].uri и пишет в target внутри
+#    default_target_dir (или другого места — выбор клиента).
+#    Пример URI шаблонных файлов:
+#       yougile://skill-template/SKILL.md
+#       yougile://skill-template/references/tool-keys.md
+#       yougile://skill-template/templates/briefing.template.md
+#       (всего 8 файлов в whitelist'е)
 ```
 
-Тул `setup_yougile_skill` задаёт 6 вопросов (воркспейсы, проекты,
-routing rules, anti-patterns) и генерирует `briefing.md` по адресу
-`~/.agents/skills/yougile-personal/briefing.md`.
+Манифест включает sha256 каждого файла — агент должен сверить контент
+после Write, чтобы исключить случайную переформулировку моделью.
 
 ### Ручная установка
 
-Если хотите заполнить шаблон вручную:
-1. Скопируйте `templates/yougile-personal-skill/SKILL.md` в
-   `~/.claude/skills/yougile-personal/SKILL.md`
-2. Заполните плейсхолдеры (workspace slugs, UUID проектов, routing rules)
-3. При следующей сессии Claude подхватит скилл автоматически
+Если хотите обойтись без агента:
+
+1. Скопируйте `templates/yougile-personal-skill/SKILL.md`,
+   `references/*` и `templates/*` в
+   `~/.agents/skills/yougile-personal/` (или другое место, где ваш
+   клиент ожидает скиллы; для Claude Code например
+   `~/.claude/skills/yougile-personal/`).
+2. Заполните плейсхолдеры в `templates/briefing.template.md` (workspace
+   slugs, UUID проектов, routing rules) и сохраните результат как
+   `briefing.md` рядом с `SKILL.md`.
+3. При следующей сессии Claude подхватит скилл автоматически.
 
 ### Обновление
 
-Обновляйте `briefing.md` при смене workspace, добавлении новых проектов
-или изменении routing rules. Запустите `setup_yougile_skill` повторно
-или отредактируйте файл вручную.
-<!-- [/наша секция] -->
+Обновляйте `briefing.md` при смене workspace, добавлении новых
+проектов или изменении routing rules. `SKILL.md` и `references/*`
+переустанавливайте через `setup_yougile_skill` (агент перепишет файлы;
+ваш `briefing.md` он не трогает) или вручную перекопируйте из шаблона
+после `git pull`.
 
 ## 🎯 Как использовать с AI помощником
 

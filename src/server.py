@@ -107,7 +107,7 @@ from .yougile_mcp.resources.api_docs import (
 )
 from .yougile_mcp.tools.meta_tools import describe_response_impl, setup_yougile_skill_impl
 from .yougile_mcp.resources.skill_template import (
-    SkillFileNotAllowed,
+    SKILL_FILES,
     get_skill_file_content,
 )
 from .yougile_mcp.prompts.workflow_prompts import (
@@ -2111,21 +2111,32 @@ def html_guide() -> str:
     return get_html_guide()
 
 
-@mcp.resource("yougile://skill-template/{path}")
-async def skill_template_file(path: str) -> str:
-    """Serve a single file from the yougile-personal skill template.
+# FastMCP URI templates (RFC 6570 level 1) парсят `{var}` как одиночный
+# path segment — `yougile://skill-template/{path}` не матчит nested URI типа
+# `yougile://skill-template/references/tool-keys.md`. Поэтому регистрируем
+# каждый файл шаблона концретным URI программно через FunctionResource.
+from mcp.server.fastmcp.resources import FunctionResource  # noqa: E402
 
-    Valid `path` values are listed in the `files[].uri` of the response
-    from the `setup_yougile_skill` tool (e.g. `SKILL.md`,
-    `references/tool-keys.md`, `templates/briefing.template.md`).
 
-    Returns the file content verbatim (UTF-8). Any path outside the
-    whitelist is rejected — no filesystem traversal is possible.
-    """
-    try:
-        return get_skill_file_content(path)
-    except SkillFileNotAllowed as e:
-        return f"# Error: {e}"
+def _make_skill_resource(relpath: str) -> FunctionResource:
+    def _reader() -> str:
+        return get_skill_file_content(relpath)
+
+    return FunctionResource(
+        uri=f"yougile://skill-template/{relpath}",
+        name=f"skill_template_{relpath.replace('/', '_')}",
+        description=(
+            f"yougile-personal SKILL file `{relpath}` (UTF-8 markdown). "
+            f"Served verbatim from templates/yougile-personal-skill/{relpath}. "
+            f"Listed in setup_yougile_skill manifest under files[].uri."
+        ),
+        mime_type="text/markdown",
+        fn=_reader,
+    )
+
+
+for _relpath in SKILL_FILES:
+    mcp.add_resource(_make_skill_resource(_relpath))
 
 
 # ---------------------------------------------------------------------------

@@ -156,7 +156,7 @@ task = create_task(column_id=col_todo["id"], title="Wire up auth")
 
 `column_id` is optional in `create_task` (matches the API DTO) —
 useful for floating subtasks that you attach later via
-`update_task(parent_id, subtasks=[new_id, ...])`.
+`update_task(task_id=parent_id, subtasks=[new_id, ...])`.
 
 ## 7. HTML formatting reminder
 

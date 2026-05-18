@@ -25,30 +25,29 @@ workspace сессии (установленный через `set_active_worksp
 
 ## Алгоритм при активации (выполнять по порядку)
 
-0. **Установи активный workspace.**
-   Прочитай `briefing.md` (шаг 1). Из него возьми `default_workspace`.
-   Вызови `set_active_workspace(slug=default_workspace)`.
-   Если briefing.md не существует — спроси: «Какая компания по умолчанию?»
-   Используй ответ в `set_active_workspace`.
-   После установки — все последующие тулы не требуют явного `workspace`.
-
-1. **Прочитай `briefing.md`** — путь: `~/.agents/skills/yougile-personal/briefing.md`
-   (или `$YOUGILE_USER_MEMORY_DIR/briefing.md` если переменная задана).
-   Из него берёшь: routing rules, UUID-кэш, workspace slugs.
+1. **Прочитай `briefing.md`** — путь: `~/.agents/skills/yougile-personal/briefing.md`.
+   Из него берёшь: `default_workspace`, routing rules, UUID-кэш, workspace slugs.
    **Если файл не существует** → предложи: «Хотите настроить персональный брифинг?
    Я задам 5 вопросов.» Шаблон: `templates/briefing.template.md`.
 
-2. **Прочитай `filters.md`** — тот же каталог. Именованные фильтры пользователя.
+2. **Установи активный workspace.**
+   Из шага 1 возьми `default_workspace` и вызови
+   `set_active_workspace(slug=default_workspace)`. Если briefing.md
+   отсутствовал — спроси у пользователя: «Какая компания по умолчанию?» и
+   используй ответ. После установки — все последующие тулы не требуют
+   явного `workspace`.
+
+3. **Прочитай `filters.md`** — тот же каталог. Именованные фильтры пользователя.
    Если файл отсутствует — пропусти (не обязателен).
 
-3. **Подгружай references/** по необходимости (не все сразу):
+4. **Подгружай references/** по необходимости (не все сразу):
    - Нестандартный набор полей → `references/describe-response.md`
    - Стикеры, вебхуки, компании → `references/quirks.md`
    - Неочевидный tool chain → `references/common-patterns.md`
    - Работа с фильтрами / сохранение фильтра → `references/custom-filters.md`
    - Параметры тулов, include-ключи → `references/tool-keys.md`
 
-4. **Если пользователь 2+ раз просит одинаковую нестандартную выборку** →
+5. **Если пользователь 2+ раз просит одинаковую нестандартную выборку** →
    предложи сохранить в `filters.md` по шаблону `templates/filters.template.md`.
 
 ---
@@ -180,12 +179,16 @@ YouGile stickers — кастомные поля компании. Устано�
 
 ## Cheat-sheet (типичные запросы → tool chain)
 
+> В примерах ниже `workspace` нигде явно не передаём — используем session-active
+> из шага 2 алгоритма. Только если пользователь явно просит другую компанию —
+> добавляй `workspace="<slug>"` как override.
+
 | Пользователь говорит | Tool chain |
 |---|---|
-| «Создай задачу X» | `create_task(workspace=default, title=X, column_id=cached.inbox, description=html)`. Скажи куда кладёшь. |
+| «Создай задачу X» | `create_task(title=X, column_id=cached.inbox, description=html)`. Скажи куда кладёшь. |
 | «Создай задачу X в проекте Y» | UUID из shortcuts выше. Если нет — `list_projects` + fuzzy, спроси при ambiguity. |
-| «Покажи мои задачи на сегодня» | `list_tasks(workspace, assigned_to=self_uuid, verbosity="custom", include=["title","deadline","columnId"])` + фильтр по deadline |
-| «Что горит» / «просроченные» | Именованный фильтр из `filters.md` если есть. Иначе: `list_tasks(completed=false)`, клиентский фильтр `deadline.deadline < now_ms` |
+| «Покажи мои задачи на сегодня» | `list_tasks(assigned_to=self_uuid, verbosity="custom", include=["title","deadline","columnId"])` + фильтр по deadline |
+| «Что горит» / «просроченные» | Именованный фильтр из `filters.md` если есть. Иначе: `list_tasks(completed=false)`, клиентский фильтр `deadline.deadline < now_ms`. Поле `completed` в compact-ответе видно только если `true` — отсутствие = задача ещё не завершена. |
 | «Отметь X как сделано» | `update_task(task_id=X, completed=true)`. Перемести в done-колонку только если есть конвенция. |
 | «Дедлайн через N дней» | `set_task_deadline(task_id, deadline=now_ms + N*86400000)` |
 | «Назначь на Иван» | `list_users` → найди по realName → `get_task` → `update_task(assigned=[ivan_uuid, *existing])` |

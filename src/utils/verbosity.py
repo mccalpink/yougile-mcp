@@ -392,27 +392,62 @@ def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
 # Hints builder
 # ---------------------------------------------------------------------------
 
-# Поля, для которых строятся _hints в compact list_* (только для TaskDto)
+# Поля, для которых строятся _hints в compact list_* (только для TaskDto).
+# Для каждого hint храним:
+#   - include_key: какой ключ из include[] делает hint бесполезным (поле
+#     уже в ответе → has_X дублирует сигнал, N13)
+#   - check: предикат на raw item
 _TASK_HINT_FIELDS = {
-    "has_description": lambda t: bool(t.get("description")),
-    "has_checklists": lambda t: bool(t.get("checklists")),
-    "has_stickers": lambda t: bool(t.get("stickers")),
-    "has_extension_data": lambda t: bool(t.get("extensionData")),
-    "has_deadline": lambda t: bool(t.get("deadline") and t["deadline"].get("deadline")),
-    "has_stopwatch": lambda t: bool(t.get("stopwatch")),
-    "has_timer": lambda t: bool(t.get("timer")),
+    "has_description":    {"include_key": "description",    "check": lambda t: bool(t.get("description"))},
+    "has_checklists":     {"include_key": "checklists",     "check": lambda t: bool(t.get("checklists"))},
+    "has_stickers":       {"include_key": "stickers",       "check": lambda t: bool(t.get("stickers"))},
+    "has_extension_data": {"include_key": "extension_data", "check": lambda t: bool(t.get("extensionData"))},
+    "has_deadline":       {"include_key": None,             "check": lambda t: bool(t.get("deadline") and t["deadline"].get("deadline"))},
+    "has_stopwatch":      {"include_key": "stopwatch",      "check": lambda t: bool(t.get("stopwatch"))},
+    "has_timer":          {"include_key": "timer",          "check": lambda t: bool(t.get("timer"))},
 }
 
 
-def build_hints(obj: dict, dto_type: str) -> "dict | None":
+def build_hints(
+    obj: dict, dto_type: str, include: "list[str] | None" = None,
+) -> "dict | None":
     """Строит _hints блок для compact list_* ответов.
+
+    N13: если поле уже явно запрошено через include[], hint про его
+    наличие подавляется — agentу не нужен сигнал ``has_X=true`` рядом
+    с самим X в теле ответа.
+
+    Args:
+        obj: raw item (источник истины для предикатов).
+        dto_type: тип DTO.
+        include: список include[] ключей, опционально (для подавления
+                 дублирующихся подсказок).
 
     Returns:
         Словарь has_X: bool, или None если для dto_type _hints не предусмотрены.
     """
     if dto_type != "task":
         return None
-    return {key: checker(obj) for key, checker in _TASK_HINT_FIELDS.items()}
+    suppressed: set[str] = set()
+    if include:
+        include_set = set(include)
+        if "all" in include_set:
+            # 'all' тянет все task-specific opt-ins — все has_X с include_key
+            # становятся избыточными.
+            suppressed = {
+                hint for hint, spec in _TASK_HINT_FIELDS.items()
+                if spec["include_key"] is not None
+            }
+        else:
+            suppressed = {
+                hint for hint, spec in _TASK_HINT_FIELDS.items()
+                if spec["include_key"] in include_set
+            }
+    return {
+        hint: spec["check"](obj)
+        for hint, spec in _TASK_HINT_FIELDS.items()
+        if hint not in suppressed
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -516,7 +551,7 @@ def apply_verbosity(
                     c, unknown = apply_includes(c, item, include, dto_type)
                     all_unknown.update(unknown)
                 if is_list:
-                    hints = build_hints(item, dto_type)  # строим по СЫРОМУ item
+                    hints = build_hints(item, dto_type, include=include)  # строим по СЫРОМУ item
                     if hints is not None:
                         c["_hints"] = hints
                 compacted_content.append(c)

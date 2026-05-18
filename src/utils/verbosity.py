@@ -67,15 +67,14 @@ def _compact_task(task: dict, is_list: bool = False) -> tuple[dict, list[str]]:
             omitted.append(k)
 
     # Drop if default / empty
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
+    # M9: то же для archived/completed — отсутствие = false, его и так не было
     if out.get("archived") is False:
         del out["archived"]
-        omitted.append("archived")
     if out.get("completed") is False:
         del out["completed"]
-        omitted.append("completed")
     if "assigned" in out and out["assigned"] == []:
         del out["assigned"]
         omitted.append("assigned")
@@ -132,18 +131,18 @@ def _compact_project(project: dict) -> tuple[dict, list[str]]:
         if k in out:
             del out[k]
             omitted.append(k)
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 
 def _compact_board(board: dict) -> tuple[dict, list[str]]:
     out = dict(board)
     omitted: list[str] = []
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 
@@ -151,9 +150,9 @@ def _compact_column(column: dict) -> tuple[dict, list[str]]:
     """Columns are already minimal; only strip default deleted flag."""
     out = dict(column)
     omitted: list[str] = []
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 
@@ -172,9 +171,9 @@ def _compact_message(msg: dict) -> tuple[dict, list[str]]:
         if k in out:
             del out[k]
             omitted.append(k)
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     if "reactions" in out and not out["reactions"]:
         del out["reactions"]
         omitted.append("reactions")
@@ -188,9 +187,9 @@ def _compact_group_chat(chat: dict) -> tuple[dict, list[str]]:
         if k in out:
             del out[k]
             omitted.append(k)
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 
@@ -206,9 +205,9 @@ def _compact_sticker(sticker: dict) -> tuple[dict, list[str]]:
         if k in out:
             del out[k]
             omitted.append(k)
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 
@@ -219,9 +218,9 @@ def _compact_webhook(wh: dict) -> tuple[dict, list[str]]:
         if k in out:
             del out[k]
             omitted.append(k)
+    # M9: falsy bool дропаем молча — не несёт информации, лишний шум в _meta.
     if "deleted" in out and out["deleted"] in (None, False):
         del out["deleted"]
-        omitted.append("deleted")
     return out, omitted
 
 

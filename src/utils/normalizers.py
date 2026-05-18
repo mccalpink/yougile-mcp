@@ -56,10 +56,17 @@ def normalize_sprint_sticker_state(state: dict, direction: str) -> dict:
             )
 
     elif direction == "response":
+        # M5: идемпотентность через threshold. Без неё повторный вызов
+        # умножал бы уже-ms значение ещё на 1000 (год становился ×1000).
         for field in ("begin", "end"):
             val = result.get(field)
-            if val is not None:
+            if val is not None and val < MS_THRESHOLD:
                 result[field] = val * 1000
+
+    else:
+        raise ValueError(
+            f"Unknown direction: {direction!r}. Expected 'request' or 'response'."
+        )
 
     return result
 

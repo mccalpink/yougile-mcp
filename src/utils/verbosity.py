@@ -350,13 +350,13 @@ def _apply_custom(data: Any, dto_type: str, include: "list[str] | None") -> Any:
         return out
 
     if isinstance(data, list):
-        all_unknown_list: set = set()
+        # Bare list не имеет места для top-level _meta — unknown_includes
+        # здесь теряется (документировано в apply_verbosity docstring).
         result = []
         for item in data:
             if isinstance(item, dict):
-                c, unknown = _strip_and_include(item)
+                c, _unknown = _strip_and_include(item)
                 result.append(c)
-                all_unknown_list.update(unknown)
             else:
                 result.append(item)
         return result
@@ -422,7 +422,11 @@ def apply_verbosity(
                    'full' — pass-through, no changes.
 
     Returns:
-        - For ``verbosity='full'``: ``data`` unchanged.
+        - For ``verbosity='full'``: pass-through. With ``include=[...]``,
+          opt-in поля добавляются к ответу; ``_meta.unknown_includes``
+          появляется при наличии неизвестных ключей в single dict / paging
+          envelope. Для bare list ``_meta`` некуда положить — unknown_includes
+          там не возвращается.
         - For ``verbosity='compact'``:
             * single dict → compacted dict; ``_meta`` inserted iff anything
               was actually omitted for that object.
@@ -452,9 +456,25 @@ def apply_verbosity(
                 if all_unknown:
                     out["_meta"] = _make_meta("full", unknown_includes=sorted(all_unknown))
                 return out
-            # Single dict: применяем include, возвращаем без _meta (full pass-through)
+            # Bare list: применяем include к каждому item; bare list не имеет
+            # места для top-level _meta, unknown_includes здесь теряется
+            # (документировано в apply_verbosity docstring).
+            if isinstance(data, list):
+                new_items = []
+                for item in data:
+                    if isinstance(item, dict):
+                        item_out, _unknown = apply_includes(dict(item), item, include, dto_type)
+                        new_items.append(item_out)
+                    else:
+                        new_items.append(item)
+                return new_items
+            # Single dict: применяем include, добавляем _meta если есть unknown
             if isinstance(data, dict):
-                obj, _unknown = apply_includes(dict(data), data, include, dto_type)
+                obj, unknown = apply_includes(dict(data), data, include, dto_type)
+                if unknown:
+                    obj["_meta"] = _make_meta(
+                        "full", unknown_includes=sorted(unknown)
+                    )
                 return obj
         return data
 

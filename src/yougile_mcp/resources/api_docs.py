@@ -40,9 +40,19 @@ the slug as `workspace=...` to every tool.
   - Webhooks
 
 ## Multi-tenant routing
-Every tool accepts `workspace: str = "default"`. The slug maps to an API
-key configured in the server environment. Calling a tool without an
-explicit `workspace` targets the legacy YOUGILE_API_KEY (= "default" slug).
+Every data tool accepts an optional `workspace` parameter. Resolution
+priority on each call:
+  1. explicit `workspace="<slug>"` — overrides everything
+  2. session-active workspace — set via `set_active_workspace("<slug>")`,
+     reset via `get_active_workspace()` or omit slug to re-default
+  3. `default` — auto-mapped from legacy `YOUGILE_API_KEY`
+
+Set the session-active workspace once at session start (most agent
+workflows do this from `briefing.md` `default_workspace`); after that
+omit `workspace=` from per-tool calls. Use explicit `workspace=` only
+for one-off overrides (e.g. cross-company queries).
+
+`list_workspaces` enumerates configured slugs and human-readable labels.
 
 ## Common pitfalls
 - Timestamps are MILLISECONDS (13 digits), not seconds.

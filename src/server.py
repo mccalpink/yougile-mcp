@@ -111,6 +111,7 @@ from .yougile_mcp.resources.skill_template import (
     get_skill_file_content,
 )
 from .yougile_mcp.prompts.workflow_prompts import (
+    api_usage_guide_prompt,
     create_task_workflow_prompt,
     daily_standup_prompt,
     deadline_crunch_management_prompt,
@@ -2208,6 +2209,13 @@ def deadline_crunch_management(deadline_date: str) -> str:
 def sprint_retrospective(sprint_end_date: str, team_user_ids: str) -> str:
     """Sprint retrospective analysis (read-only)."""
     return retrospective_analysis_prompt(sprint_end_date, team_user_ids)
+
+
+@mcp.prompt(title="API Usage Guide")
+def api_usage_guide() -> str:
+    """Quick reference for using this MCP: workspaces, verbosity,
+    include[], describe_response, skill installation, common pitfalls."""
+    return api_usage_guide_prompt()
 
 
 # ---------------------------------------------------------------------------

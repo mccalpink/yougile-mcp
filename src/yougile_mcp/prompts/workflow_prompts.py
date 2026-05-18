@@ -10,6 +10,188 @@ via list_* tools at runtime.
 from typing import List, Optional
 
 
+def api_usage_guide_prompt() -> str:
+    """Quick reference: how to use this MCP — workspaces, verbosity,
+    include[], describe_response, skill, common pitfalls."""
+    return """Quick reference for working with this YouGile MCP. Read once
+at session start; details are also discoverable through `describe_response`
+and the `yougile://api/overview` resource.
+
+## 1. Pick a workspace (multi-tenant)
+
+This server can hold API keys for several YouGile companies at once.
+Each key is exposed as a `workspace` slug (env var `YOUGILE_KEY_<SLUG>`).
+Legacy single-tenant configs (`YOUGILE_API_KEY`) map to slug `default`.
+
+  1. `list_workspaces()` — see configured slugs + human labels.
+     Returns `[{slug, label, has_company_id}]`. Never exposes the keys.
+  2. `set_active_workspace(slug="main")` — make it the session default;
+     subsequent tools omit `workspace=`.
+  3. `get_active_workspace()` — verify the current slug + available list.
+  4. Explicit `workspace="other"` in a tool call overrides the session
+     active workspace (one-off cross-workspace queries).
+
+Persist the chosen default in the personal skill — see §5.
+
+## 2. Read tools: verbosity + include[]
+
+All `list_*` / `get_*` tools accept `verbosity` and `include[]`. The MCP
+server post-processes raw API responses to cut noise; the agent controls
+how much detail it asks for per call.
+
+| Verbosity | What you get | When |
+|---|---|---|
+| `custom`  | `id` only (or `id` + fields listed in `include`) | counts, aggregations |
+| `compact` | curated core fields + ISO timestamps + `_hints` block on lists | DEFAULT — normal work |
+| `full`    | pass-through of the raw API payload | debugging, audits |
+
+`include[]` adds extra fields on top of the chosen verbosity. Opt-in
+keys are entity-scoped (task: `description`, `checklists`, `stickers`,
+`stopwatch`, `timer`, `time_tracking`, `deal`, `extension_data`,
+`deadline_history`, `timestamps`; sticker: `sprint_states`,
+`string_states`; group_chat: `chat_maps`). Direct field names are also
+accepted: `include=["title"]` works even when `title` is already in
+compact (no-op). Unknown / wrong-DTO keys surface as
+`_meta.unknown_includes` rather than silent no-ops.
+
+Examples:
+```
+# Default: compact — minimal payload, _hints block on list responses
+list_tasks(column_id="<uuid>")
+
+# Want descriptions for a list scan
+list_tasks(column_id="<uuid>", include=["description"])
+
+# Just count completed vs not — minimum tokens
+list_tasks(column_id="<uuid>", verbosity="custom", include=["completed"])
+
+# Debugging — raw API payload
+get_task(task_id="<uuid>", verbosity="full")
+```
+
+The compact response always carries a `_meta` envelope with what was
+dropped, what include keys were unknown, and any auto-heal notes. Use
+`describe_response(entity="task")` to discover which fields live where
+without making an API round-trip.
+
+## 3. describe_response: the schema cheat-sheet
+
+`describe_response(entity?, verbosity?)` is a meta tool that does NOT
+hit the YouGile API. It returns the field-level schema for any of the
+9 entities (task, project, board, column, user, message, group_chat,
+sticker, webhook):
+- which fields appear in `compact` vs `full` vs require `include[]`
+- type hints (UUID / ms epoch / ISO / enum / HTML)
+- known quirks (the auto-heal normalizers)
+
+Call it before constructing an unusual field request — saves
+trial-and-error round-trips.
+
+## 4. Auto-heal quirks
+
+Some YouGile DTOs are inconsistent with the OpenAPI spec or each
+other. The MCP transparently normalises them so the agent sees one
+canonical shape. When the normaliser does something, it adds a note to
+`_meta.notes`:
+
+- `SprintStickerState.begin/end` — stored in seconds, normalised to ms
+  (both request and response paths are idempotent via a threshold).
+- `WebhookFilters.name` — described as array in OpenAPI, accepted as
+  string by the API; we coerce single-element arrays to a string with
+  a note.
+- `Company.name` vs `Company.title` — both unified to `title`.
+- `Stopwatch` runtime field-name discovery — placeholder; integration
+  test pending a stopwatch fixture.
+
+## 5. Personal skill = your project shorthand
+
+Without the skill, you re-discover the same UUIDs (workspaces,
+projects, columns, stickers, users) at the start of every session.
+With it, they sit in a local briefing file the agent reads first.
+
+  1. `setup_yougile_skill()` returns a manifest:
+     - `questions` for the user (workspaces, default workspace,
+       project shorthands, routing rules, board columns,
+       anti-patterns)
+     - `default_target_dir` (recommended install path)
+     - `files: [{uri, target, sha256}]` — each entry is a concrete
+       MCP resource under `yougile://skill-template/<relpath>`
+     - `instructions` for the install protocol
+  2. The agent reads each `files[i].uri` via `resources/read`
+     (content arrives verbatim), then writes it to disk with its
+     own Write tool — under the user's normal permissions. The MCP
+     server itself never writes to the client filesystem.
+  3. Verify each file matches `sha256` after Write; if not, re-write.
+  4. Ask the user the `questions`; fill in
+     `templates/briefing.template.md`; save as `briefing.md` in the
+     target dir.
+  5. From the next session start, the agent reads `briefing.md` and
+     `set_active_workspace(...)` for the recorded
+     `default_workspace` before any tool calls.
+
+The skill is the right place to persist project-specific routing
+rules ("when the user says 'клиент ACME' → workspace
+`client_acme`"), preferred verbosity defaults, frequently-used
+column UUIDs, and anti-patterns. Update `briefing.md` whenever the
+project surface changes; the agent will pick up the new context on
+the next session.
+
+## 6. Create-then-read pattern
+
+`create_*` tools return only the new `id` — they do NOT return the
+full object. If you need the full state immediately, follow with
+`get_<entity>(id=...)`. The skip-the-get optimisation is the
+default because most callers only need the id for the next step.
+
+Example (project → board → columns → task):
+```
+proj = create_project(title="Website redesign",
+                      users={"<user-uuid>": "admin"})
+board = create_board(project_id=proj["id"], title="Backlog")
+col_todo  = create_column(board_id=board["id"], title="To Do",        color=1)
+col_doing = create_column(board_id=board["id"], title="In Progress",  color=5)
+col_done  = create_column(board_id=board["id"], title="Done",         color=13)
+task = create_task(column_id=col_todo["id"], title="Wire up auth")
+```
+
+`column_id` is optional in `create_task` (matches the API DTO) —
+useful for floating subtasks that you attach later via
+`update_task(parent_id, subtasks=[new_id, ...])`.
+
+## 7. HTML formatting reminder
+
+Task descriptions and chat messages must be HTML. Use `<br>` for
+line breaks (NOT `\\n` — it won't display), `<b>` / `<i>` / `<u>`,
+`<a href="...">`, `<ul><li>` / `<ol><li>`. Full reference: read
+the resource `yougile://guides/html`.
+
+## 8. Checklists
+
+Tasks can have multiple checklists. Format:
+```
+checklists=[
+  {"title": "Backend",  "items": [{"title": "API",  "isCompleted": False}]},
+  {"title": "Frontend", "items": [{"title": "Form", "isCompleted": False}]},
+]
+```
+`update_task` replaces the entire `checklists` array — read current
+state first, mutate the list, write the full array back. Same rule
+applies to `assigned`, `subtasks`, `stickers`.
+
+## 9. Common pitfalls
+
+- Timestamps are MILLISECONDS (13 digits), not seconds.
+- `soft-delete vs hard-delete`: most delete operations are
+  `update_<entity>(deleted=True)`. Lists hide deleted entities by
+  default; pass `include_deleted=True` (where supported) to find them.
+- Don't pass `workspace="default"` in every tool call once you have
+  set an active workspace — leave the argument off; explicit only for
+  cross-workspace overrides.
+- `list_api_keys` returns `key_preview` only (security — never raw
+  keys); use `create_api_key` / `delete_api_key` to manage keys.
+"""
+
+
 def setup_new_project_prompt(project_name: str, project_type: str = "kanban") -> str:
     """Guide for creating and configuring a new project."""
     return f"""Set up a new {project_type} project called "{project_name}" in YouGile.

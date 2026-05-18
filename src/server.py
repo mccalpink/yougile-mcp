@@ -452,7 +452,16 @@ async def describe_response(
             ),
         ),
     ] = "compact",
-    workspace: WorkspaceParam | None = None,
+    workspace: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Ignored — this tool returns a static schema and does not "
+                "call the YouGile API. Kept in the signature so older clients "
+                "that pass `workspace=` to every tool do not error."
+            ),
+        ),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
     """Return the response schema for a YouGile entity type.
@@ -468,13 +477,21 @@ async def describe_response(
 
     RELATED: All list_* and get_* tools accept verbosity and include[] parameters.
     """
-    workspace = _resolve_ws(workspace, ctx)
     return await describe_response_impl(entity=entity, verbosity=verbosity)
 
 
 @mcp.tool(annotations=ANN_READ)
 async def setup_yougile_skill(
-    workspace: WorkspaceParam | None = None,
+    workspace: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Ignored — this tool returns a static manifest and does not "
+                "call the YouGile API. Kept in the signature so older clients "
+                "that pass `workspace=` to every tool do not error."
+            ),
+        ),
+    ] = None,
     ctx: Context = None,
 ) -> dict:
     """Return a manifest for installing the yougile-personal SKILL.

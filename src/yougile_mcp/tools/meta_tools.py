@@ -2,8 +2,10 @@
 
 Содержит:
 - describe_response_impl — логика описания DTO-схем (тестируется напрямую)
-- setup_yougile_skill_impl — возвращает манифест для установки персонального скилла
-  агентом (MCP сам файлы не пишет — см. design B, review-fixes/PLAN.md)
+- setup_yougile_skill_impl — возвращает манифест с URI ресурсов шаблона.
+  MCP-сервер сам файлы на диск пользователя не пишет: контент отдаётся
+  как MCP resources, агент читает их через resources/read и записывает
+  своим Write-tool под обычными permissions клиента.
 """
 from __future__ import annotations
 

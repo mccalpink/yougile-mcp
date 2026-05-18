@@ -1,10 +1,9 @@
-"""Spec §1.3: неизвестные include[] ключи должны попадать в
-``_meta.unknown_includes`` на всех формах ответа, где есть место для _meta.
-
-Закрывает review-fixes M4 + N15:
-- full + single dict: было — _unknown собирался но терялся
-- full + bare list: было — bare list не обрабатывался вообще
-- custom + bare list: было — all_unknown_list собирался но терялся
+"""Неизвестные ``include[]`` ключи должны попадать в
+``_meta.unknown_includes`` на всех формах ответа, где есть место для
+``_meta``. Регресс-тесты на ранее упущенные комбинации:
+- full + single dict: ``_unknown`` собирался, но терялся в ответе.
+- full + bare list:   путь вообще не обрабатывался.
+- custom + bare list: ``all_unknown_list`` собирался, но не использовался.
 """
 from src.utils.verbosity import apply_verbosity
 

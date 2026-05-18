@@ -1,11 +1,10 @@
 """MCP resources для шаблона персонального скилла YouGile.
 
 Шаблон выставлен как набор MCP resources под URI вида
-`yougile://skill-template/{path}`. Каждый файл — отдельный ресурс,
-агент читает их через resources/read и записывает к себе через свой
-Write-tool (никаких файловых операций со стороны MCP-сервера).
-
-См. design/06-verbosity-and-skill.md + review-fixes B2 (дизайн B).
+`yougile://skill-template/<relative-path>`. Каждый файл — отдельный
+ресурс; агент читает их через `resources/read` и записывает к себе
+через свой Write-tool. MCP-сервер при этом ничего не пишет на диск
+пользователя — никакого path-traversal риска со стороны тула.
 """
 from __future__ import annotations
 

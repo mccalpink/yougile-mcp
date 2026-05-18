@@ -7,8 +7,9 @@ unless the caller explicitly passes verbosity='full'. Compact responses
 include a top-level '_meta' block listing what was dropped for the
 specific object so the agent knows to ask for full mode if it needs them.
 
-Whitelist / dropfields per DTO derived from the verbosity research:
-docs_work/may17/yougile/plan/research/response_verbosity.md §C.2
+Whitelist / drop-fields per DTO derived from a response-size audit
+across the read endpoints (curated to keep id/title/relations + a few
+flags; drop raw timestamps in favour of ISO-8601 derived fields).
 """
 
 from datetime import datetime, timezone

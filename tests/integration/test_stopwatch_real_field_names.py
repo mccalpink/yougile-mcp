@@ -58,11 +58,11 @@ def test_stopwatch_real_field_names(api_key, test_workspace_slug, tmp_path):
     sample_stopwatch = stopwatch_tasks[0]["stopwatch"]
     real_fields = list(sample_stopwatch.keys()) if isinstance(sample_stopwatch, dict) else []
 
-    # Сохранить результат в постоянное место для Task 8.8
+    # Сохранить результат в репо-локальный artefact dir (docs/quirk_discoveries
+    # рядом с pyproject) — путь резолвится от файла теста, чтобы не зависеть
+    # от cwd при запуске и не таскать абсолютные пути в коде.
     import pathlib
-    result_dir = pathlib.Path(
-        "/home/user/projects/pets/yougile-mcp/docs/quirk_discoveries"
-    )
+    result_dir = pathlib.Path(__file__).resolve().parents[2] / "docs" / "quirk_discoveries"
     result_dir.mkdir(parents=True, exist_ok=True)
     (result_dir / "stopwatch_fields.json").write_text(
         json.dumps({

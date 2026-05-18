@@ -168,7 +168,7 @@ def normalize_company_list(companies: list) -> list:
 _STOPWATCH_WARNING = (
     "Stopwatch field name mismatch: OpenAPI schema says {running, seconds, atMoment}, "
     "but runtime may expose {running, time, timestamp}. "
-    "Field names unverified — see TODO in tests/integration/test_stopwatch_quirk.py."
+    "Field names unverified — see TODO in tests/integration/test_stopwatch_real_field_names.py."
 )
 
 
@@ -176,8 +176,8 @@ def normalize_stopwatch_warning(task: dict) -> dict:
     """
     Заглушка нормализатора для Stopwatch quirk.
 
-    TODO: После прогона tests/integration/test_stopwatch_quirk.py и фиксации
-    реальных имён полей — заменить на полноценный нормализатор или убрать
+    TODO: После прогона tests/integration/test_stopwatch_real_field_names.py
+    и фиксации реальных имён полей — заменить на полноценный нормализатор или убрать
     предупреждение если поля совпадают с OpenAPI.
 
     Источник: dto_map/_ANALYSIS.md §7, п. 5.

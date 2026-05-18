@@ -1,7 +1,8 @@
 """Тесты для skill_template MCP-ресурса.
 
-Дизайн B (см. review-fixes/PLAN.md): MCP отдаёт файлы шаблона как resources
-через whitelist; никаких записей на диск, никакого path traversal.
+MCP отдаёт файлы шаблона как resources через явный whitelist; никаких
+записей на пользовательский диск со стороны сервера, никакого path
+traversal.
 """
 import hashlib
 from pathlib import Path

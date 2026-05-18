@@ -43,7 +43,3 @@ actual content.
 
 **Note:** `CompanyListDtoBase.name` vs `CompanyDto.title` —
 the same field is named differently across two DTOs.
-
----
-
-Tracking document (internal): `docs_work/may17/yougile/backlog/coverage_expansion.md`

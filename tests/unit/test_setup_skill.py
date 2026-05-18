@@ -1,7 +1,8 @@
 """Тесты для setup_yougile_skill_impl (manifest-based install).
 
-Дизайн B (см. review-fixes/PLAN.md): тул возвращает манифест с URI ресурсов
-и sha256 для verification — никаких файловых операций со стороны MCP.
+Тул возвращает манифест с URI ресурсов шаблона и sha256 для verification.
+Никаких файловых операций со стороны MCP — установку выполняет агент
+своим Write-tool под обычными permissions клиента.
 """
 import hashlib
 from pathlib import Path

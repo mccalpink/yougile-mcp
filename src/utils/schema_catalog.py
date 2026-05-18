@@ -30,6 +30,9 @@ def _f(
 _ALL = ["custom", "compact", "full"]
 _CF = ["compact", "full"]
 _F = ["full"]
+# _NONE — поле объявлено в catalog для самодокументации, но дропается
+# на ВСЕХ уровнях verbosity (включая full). Используется редко; для полей,
+# которые остаются в full pass-through, ставить _F.
 _NONE: list[str] = []
 
 
@@ -63,9 +66,9 @@ _SCHEMA: dict[str, dict] = {
             _f("timestamp",           "integer (ms epoch)",  _F,    "timestamps",       "Raw creation timestamp. Use createdAt instead."),
             _f("archivedTimestamp",   "integer (ms epoch)",  _F,    "timestamps",       "Raw archived timestamp."),
             _f("completedTimestamp",  "integer (ms epoch)",  _F,    "timestamps",       "Raw completed timestamp."),
-            _f("createdBy",           "string (UUID)",       _NONE, None,               "Always dropped."),
-            _f("idTaskCommon",        "string",              _NONE, None,               "Always dropped."),
-            _f("idTaskProject",       "string",              _NONE, None,               "Always dropped."),
+            _f("createdBy",           "string (UUID)",       _F,    None,               "Full-only pass-through; noisy, rarely useful."),
+            _f("idTaskCommon",        "string",              _F,    None,               "Full-only pass-through; legacy id, rarely useful."),
+            _f("idTaskProject",       "string",              _F,    None,               "Full-only pass-through; legacy id, rarely useful."),
         ],
         "optins": [
             "description", "checklists", "stickers", "stopwatch", "timer",
@@ -133,7 +136,7 @@ _SCHEMA: dict[str, dict] = {
             _f("email",        "string",             _CF,   None, "User identifier."),
             _f("realName",     "string",             _CF,   None, "Display name."),
             _f("status",       "string (enum)",      _CF,   None, "online/offline."),
-            _f("lastActivity", "integer (ms epoch)", _NONE, None, "Always dropped in compact."),
+            _f("lastActivity", "integer (ms epoch)", _F, None, "Full-only pass-through; raw ms timestamp."),
         ],
         "optins": [],
         "hints_in_compact": [],
@@ -149,8 +152,8 @@ _SCHEMA: dict[str, dict] = {
             _f("userId",        "string (UUID)",      _CF,   None, "Author UUID."),
             _f("deleted",       "boolean",            _CF,   None, "Included only if true."),
             _f("reactions",     "object",             _CF,   None, "Included if non-empty."),
-            _f("textHtml",      "string (HTML)",      _NONE, None, "Always dropped; plain text sufficient."),
-            _f("editTimestamp", "integer (ms epoch)", _NONE, None, "Always dropped."),
+            _f("textHtml",      "string (HTML)",      _F, None, "Full-only pass-through; plain `text` usually sufficient."),
+            _f("editTimestamp", "integer (ms epoch)", _F, None, "Full-only pass-through; raw ms timestamp."),
         ],
         "optins": [],
         "hints_in_compact": [],
@@ -181,8 +184,8 @@ _SCHEMA: dict[str, dict] = {
             _f("deleted", "boolean",       _CF,   None,                                    "Included only if true."),
             _f("states",  "array",         _F,    "sprint_states",                         "For sprint stickers. include_key depends on sticker type."),
             _f("states (string)", "array", _F,    "string_states",                         "For string stickers. include_key depends on sticker type."),
-            _f("limit",   "integer",       _NONE, None,                                    "Pagination artifact dropped always (OpenAPI quirk)."),
-            _f("offset",  "integer",       _NONE, None,                                    "Pagination artifact dropped always (OpenAPI quirk)."),
+            _f("limit",   "integer",       _F,    None,                                    "Full pass-through artifact (OpenAPI codegen quirk); ignore."),
+            _f("offset",  "integer",       _F,    None,                                    "Full pass-through artifact (OpenAPI codegen quirk); ignore."),
         ],
         "optins": ["sprint_states", "string_states"],
         "hints_in_compact": [],
@@ -203,8 +206,8 @@ _SCHEMA: dict[str, dict] = {
             _f("events",                  "array[string]",  _CF,   None, "Subscribed event types."),
             _f("filters",                 "array[object]",  _CF,   None, "WebhookFilters. See quirks: name field is string, not array."),
             _f("deleted",                 "boolean",        _CF,   None, "Included only if true."),
-            _f("lastSuccess",             "integer (ms epoch)", _NONE, None, "Monitoring metric; dropped."),
-            _f("failuresSinceLastSuccess","integer",        _NONE, None, "Monitoring metric; dropped."),
+            _f("lastSuccess",             "integer (ms epoch)", _F, None, "Full-only pass-through monitoring metric."),
+            _f("failuresSinceLastSuccess","integer",        _F, None, "Full-only pass-through monitoring metric."),
         ],
         "optins": [],
         "hints_in_compact": [],

@@ -48,15 +48,23 @@ def test_hints_no_include_full_set():
     }
 
 
-def test_apply_verbosity_compact_list_propagates_include_to_hints():
-    """End-to-end: apply_verbosity передаёт include в build_hints."""
-    raw = [{
-        "id": "u", "title": "x", "columnId": "c",
-        "description": "<p>x</p>",
-    }]
+def test_apply_verbosity_paging_list_propagates_include_to_hints():
+    """End-to-end: apply_verbosity передаёт include в build_hints.
+
+    _hints живёт только в paging-envelope ответе (list_*-тулы YouGile
+    отдают именно paging), bare list этой структуры не имеет.
+    """
+    raw = {
+        "paging": {"totalCount": 1, "offset": 0, "limit": 20},
+        "content": [
+            {"id": "u", "title": "x", "columnId": "c", "description": "<p>x</p>"},
+        ],
+    }
     result = apply_verbosity(
         raw, "task", verbosity="compact", include=["description"], is_list=True
     )
-    item = result[0]
+    item = result["content"][0]
     assert item["description"] == "<p>x</p>"
     assert "has_description" not in item["_hints"]
+    # Остальные hints — на месте, например has_checklists
+    assert "has_checklists" in item["_hints"]

@@ -36,10 +36,22 @@ cat ~/.claude.json | grep yougile
 запусти setup_yougile_skill
 ```
 
-Или прочитай шаблон напрямую через MCP resource:
+Или прочитай отдельные файлы шаблона напрямую как MCP-ресурсы — по
+одному ресурсу на файл (concrete URIs, не template):
+
 ```
-yougile://skill-template
+yougile://skill-template/SKILL.md
+yougile://skill-template/references/tool-keys.md
+yougile://skill-template/references/common-patterns.md
+yougile://skill-template/references/describe-response.md
+yougile://skill-template/references/custom-filters.md
+yougile://skill-template/references/quirks.md
+yougile://skill-template/templates/briefing.template.md
+yougile://skill-template/templates/filters.template.md
 ```
+
+Полный список и хэши контента возвращает `setup_yougile_skill()` в
+поле `files[]`.
 
 ### 3. Ручная установка SKILL.md
 

@@ -106,7 +106,10 @@ from .yougile_mcp.resources.api_docs import (
     get_html_guide,
 )
 from .yougile_mcp.tools.meta_tools import describe_response_impl, setup_yougile_skill_impl
-from .yougile_mcp.resources.skill_template import get_skill_template_content
+from .yougile_mcp.resources.skill_template import (
+    SkillFileNotAllowed,
+    get_skill_file_content,
+)
 from .yougile_mcp.prompts.workflow_prompts import (
     create_task_workflow_prompt,
     daily_standup_prompt,
@@ -471,33 +474,34 @@ async def describe_response(
 
 @mcp.tool(annotations=ANN_READ)
 async def setup_yougile_skill(
-    memory_dir: Annotated[
-        Optional[str],
-        Field(
-            description=(
-                "Override path for briefing.md. "
-                "Default: ~/.agents/skills/yougile-personal/briefing.md. "
-                "Set YOUGILE_USER_MEMORY_DIR env var to make the override permanent."
-            ),
-            examples=["~/.agents/skills/yougile-personal", "/custom/path"],
-        ),
-    ] = None,
     workspace: WorkspaceParam | None = None,
     ctx: Context = None,
 ) -> dict:
-    """Guide interactive setup of the yougile-personal SKILL.
+    """Return a manifest for installing the yougile-personal SKILL.
 
-    USE WHEN: User asks to 'configure skill', 'setup yougile', or briefing.md is missing.
+    The MCP server does NOT write to the filesystem. The tool returns a
+    manifest (list of resource URIs + recommended target dir + sha256 of
+    each file + agent instructions); the agent reads each resource via
+    `resources/read` and writes it with its own Write tool, under the
+    user's normal permissions.
 
-    DO NOT USE: If briefing.md already exists and user hasn't asked to reconfigure.
+    USE WHEN: user asks to 'configure skill', 'setup yougile', or the
+    skill is not yet installed.
 
-    RETURNS: List of questions to ask the user + target path for briefing.md.
-    After collecting answers — call list_projects to resolve UUIDs, then write briefing.md.
+    DO NOT USE: if SKILL.md and briefing.md already exist and the user
+    has not asked to reconfigure.
 
-    RELATED: Resource yougile://skill-template — shows the SKILL.md template structure.
+    RETURNS: dict with keys:
+      - questions: list of questions to collect briefing.md content
+      - default_target_dir: recommended install location
+      - files: [{uri, target, sha256}, ...] — the agent reads each uri
+        and writes content to default_target_dir/target
+      - instructions: step-by-step protocol for the agent
+
+    RELATED: Resource template yougile://skill-template/{path} —
+    serves each file referenced in files[].uri verbatim.
     """
-    workspace = _resolve_ws(workspace, ctx)
-    return await setup_yougile_skill_impl(memory_dir=memory_dir)
+    return await setup_yougile_skill_impl()
 
 
 # ---------------------------------------------------------------------------
@@ -2090,15 +2094,21 @@ def html_guide() -> str:
     return get_html_guide()
 
 
-@mcp.resource("yougile://skill-template")
-async def skill_template_resource() -> str:
-    """Canonical link to the SKILL.md template for personal workflow configuration.
+@mcp.resource("yougile://skill-template/{path}")
+async def skill_template_file(path: str) -> str:
+    """Serve a single file from the yougile-personal skill template.
 
-    Use this resource to inspect the skill template BEFORE running setup_yougile_skill.
-    The template lives at templates/yougile-personal-skill/SKILL.md in the MCP source.
-    Read it to understand the briefing.md structure you're about to create.
+    Valid `path` values are listed in the `files[].uri` of the response
+    from the `setup_yougile_skill` tool (e.g. `SKILL.md`,
+    `references/tool-keys.md`, `templates/briefing.template.md`).
+
+    Returns the file content verbatim (UTF-8). Any path outside the
+    whitelist is rejected — no filesystem traversal is possible.
     """
-    return get_skill_template_content()
+    try:
+        return get_skill_file_content(path)
+    except SkillFileNotAllowed as e:
+        return f"# Error: {e}"
 
 
 # ---------------------------------------------------------------------------

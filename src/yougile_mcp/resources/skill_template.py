@@ -1,34 +1,80 @@
-"""
-MCP resource для шаблона персонального скилла YouGile.
+"""MCP resources для шаблона персонального скилла YouGile.
 
-Resource возвращает содержимое templates/yougile-personal-skill/SKILL.md —
-шаблон для настройки персонального workflow агента.
+Шаблон выставлен как набор MCP resources под URI вида
+`yougile://skill-template/{path}`. Каждый файл — отдельный ресурс,
+агент читает их через resources/read и записывает к себе через свой
+Write-tool (никаких файловых операций со стороны MCP-сервера).
 
-Использование агентом: прочитать ресурс перед setup_yougile_skill,
-чтобы понять структуру briefing.md до его создания.
+См. design/06-verbosity-and-skill.md + review-fixes B2 (дизайн B).
 """
+from __future__ import annotations
+
+import hashlib
 from pathlib import Path
 
 
-# Путь к шаблону относительно корня репозитория MCP
-_SKILL_TEMPLATE_PATH = Path(__file__).parents[4] / "templates" / "yougile-personal-skill" / "SKILL.md"
+# Корень templates/yougile-personal-skill/ относительно репы MCP.
+# parents[3] = корень репы (src/yougile_mcp/resources/skill_template.py).
+_TEMPLATE_DIR: Path = (
+    Path(__file__).parents[3] / "templates" / "yougile-personal-skill"
+).resolve()
 
 
-def get_skill_template_content() -> str:
-    """
-    Читает содержимое SKILL.md из templates/yougile-personal-skill/.
+# Whitelist файлов скилла, доступных через resources/read.
+# README.md из template НЕ публикуется — это документация для разработчика
+# MCP, не для пользователя скилла.
+SKILL_FILES: tuple[str, ...] = (
+    "SKILL.md",
+    "references/common-patterns.md",
+    "references/custom-filters.md",
+    "references/describe-response.md",
+    "references/quirks.md",
+    "references/tool-keys.md",
+    "templates/briefing.template.md",
+    "templates/filters.template.md",
+)
+
+
+class SkillFileNotAllowed(ValueError):
+    """Запрошен путь, не входящий в whitelist (или path-traversal попытка)."""
+
+
+def get_skill_file_content(relpath: str) -> str:
+    """Содержимое одного файла шаблона по относительному пути.
+
+    Принимает только пути из ``SKILL_FILES``. Любая попытка указать
+    другой путь (включая `..`, абсолютные пути или symlink за пределы
+    template dir) приводит к ``SkillFileNotAllowed``.
+
+    Args:
+        relpath: относительный путь файла в шаблоне, ровно как в SKILL_FILES.
 
     Returns:
-        Содержимое файла как строка, или описание ошибки если файл не найден.
+        Содержимое файла как str (UTF-8).
     """
-    try:
-        return _SKILL_TEMPLATE_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return (
-            f"# Error: SKILL.md template not found\n\n"
-            f"Expected at: `{_SKILL_TEMPLATE_PATH}`\n\n"
-            f"Run `setup_yougile_skill` to initialize the skill, or manually copy "
-            f"`templates/yougile-personal-skill/SKILL.md` to your skills directory."
+    if relpath not in SKILL_FILES:
+        raise SkillFileNotAllowed(
+            f"Path '{relpath}' is not in the skill template whitelist. "
+            f"Allowed: {list(SKILL_FILES)}"
         )
-    except Exception as e:
-        return f"# Error reading SKILL.md template\n\n{e}"
+
+    resolved = (_TEMPLATE_DIR / relpath).resolve()
+    # Двойная защита: даже если whitelist кто-то расширит, путь обязан
+    # остаться внутри template dir (защита от symlink escape).
+    if not str(resolved).startswith(str(_TEMPLATE_DIR) + "/") and resolved != _TEMPLATE_DIR:
+        raise SkillFileNotAllowed(
+            f"Resolved path '{resolved}' escapes template dir '{_TEMPLATE_DIR}'"
+        )
+
+    return resolved.read_text(encoding="utf-8")
+
+
+def compute_skill_file_sha256(relpath: str) -> str:
+    """SHA-256 содержимого файла шаблона (для verification в manifest)."""
+    content = get_skill_file_content(relpath).encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def list_skill_files() -> list[str]:
+    """Список относительных путей всех публикуемых файлов шаблона."""
+    return list(SKILL_FILES)

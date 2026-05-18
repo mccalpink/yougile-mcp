@@ -1,19 +1,17 @@
-"""
-Мета-инструменты для интроспекции MCP-сервера YouGile.
+"""Мета-инструменты для интроспекции MCP-сервера YouGile.
 
 Содержит:
 - describe_response_impl — логика описания DTO-схем (тестируется напрямую)
-- setup_yougile_skill_impl — логика настройки персонального скилла
+- setup_yougile_skill_impl — возвращает манифест для установки персонального скилла
+  агентом (MCP сам файлы не пишет — см. design B, review-fixes/PLAN.md)
 """
 from __future__ import annotations
 
-import filecmp
-import os
-import shutil
-import time
-from pathlib import Path
-
-from ...utils.schema_catalog import get_entity_schema, get_all_entities
+from ..resources.skill_template import (
+    SKILL_FILES,
+    compute_skill_file_sha256,
+)
+from ...utils.schema_catalog import get_all_entities, get_entity_schema
 
 
 # ---------------------------------------------------------------------------
@@ -25,14 +23,13 @@ async def describe_response_impl(
     entity: str | None,
     verbosity: str = "compact",
 ) -> dict:
-    """
-    Возвращает схему полей для указанной YouGile entity или обзор всех сущностей.
+    """Схема полей для YouGile entity (или обзор всех сущностей).
 
     Args:
         entity: Имя сущности (task, project, board, column, user,
                 message, group_chat, sticker, webhook) или None для обзора.
-        verbosity: 'compact' — только поля compact-уровня;
-                   'full' — все поля включая opt-in.
+        verbosity: 'compact' — поля compact-уровня; 'full' — все поля
+                   включая opt-in.
 
     Returns:
         Словарь с описанием схемы.
@@ -53,7 +50,7 @@ async def describe_response_impl(
 
 
 def _describe_overview(verbosity: str) -> dict:
-    """Возвращает обзор всех 9 сущностей."""
+    """Обзор всех 9 сущностей."""
     entities = {}
     for name in get_all_entities():
         schema = get_entity_schema(name)
@@ -73,21 +70,16 @@ def _describe_overview(verbosity: str) -> dict:
 
 
 def _describe_entity(schema: dict, verbosity: str) -> dict:
-    """Возвращает детальное описание одной сущности."""
+    """Детальное описание одной сущности."""
     all_fields = schema["fields"]
 
     if verbosity == "compact":
-        # Показываем только поля, присутствующие в compact или custom
         visible_fields = [
             f for f in all_fields
             if "compact" in f["in_verbosity"] or "custom" in f["in_verbosity"]
         ]
     else:
-        # full — показываем все поля кроме тех, у кого in_verbosity == []
-        visible_fields = [
-            f for f in all_fields
-            if f["in_verbosity"]  # скрываем поля с пустым in_verbosity (всегда dropped)
-        ]
+        visible_fields = [f for f in all_fields if f["in_verbosity"]]
 
     return {
         "entity": schema["entity"],
@@ -103,9 +95,7 @@ def _describe_entity(schema: dict, verbosity: str) -> dict:
 # setup_yougile_skill
 # ---------------------------------------------------------------------------
 
-_DEFAULT_MEMORY_DIR = Path.home() / ".agents" / "skills" / "yougile-personal"
-_BRIEFING_FILENAME = "briefing.md"
-_TEMPLATE_DIR = Path(__file__).parents[3] / "templates" / "yougile-personal-skill"
+_DEFAULT_TARGET_DIR = "~/.agents/skills/yougile-personal/"
 
 _SETUP_QUESTIONS = [
     "1. Какие YouGile-компании (воркспейсы) вы используете? "
@@ -129,121 +119,51 @@ _SETUP_QUESTIONS = [
     "Пример: не перемещать задачи без подтверждения, не писать в чат без просьбы.",
 ]
 
-
-def _copy_dir_idempotent(src: Path, dst: Path) -> tuple[list[str], list[str]]:
-    """
-    Копирует содержимое src/ в dst/ с проверкой идемпотентности через filecmp.
-
-    Файлы с одинаковым содержимым пропускаются.
-    Файлы с изменённым содержимым перезаписываются (статичные ссылки — не пользовательский контент).
-
-    Returns:
-        Кортеж (installed, skipped) — списки имён файлов.
-    """
-    dst.mkdir(parents=True, exist_ok=True)
-    installed: list[str] = []
-    skipped: list[str] = []
-
-    for src_file in sorted(src.iterdir()):
-        if not src_file.is_file():
-            continue
-        dst_file = dst / src_file.name
-        if dst_file.exists() and filecmp.cmp(str(src_file), str(dst_file), shallow=False):
-            skipped.append(src_file.name)
-        else:
-            shutil.copy2(str(src_file), str(dst_file))
-            installed.append(src_file.name)
-
-    return installed, skipped
+_INSTRUCTIONS = (
+    "Установка скилла полностью на стороне агента — MCP-сервер не пишет на "
+    "диск.\n\n"
+    "Шаги:\n"
+    "1. Для каждого files[i] прочитай содержимое через ReadMcpResource(uri).\n"
+    "   Текст приходит дословно — не переформулируй.\n"
+    "2. Запиши его в default_target_dir + files[i].target (или другое место, "
+    "если пользователь предпочитает).\n"
+    "3. После записи каждого файла свернись sha256 содержимого: при "
+    "расхождении с files[i].sha256 — перезапиши.\n"
+    "4. Задай пользователю questions, заполни briefing.md из шаблона "
+    "templates/briefing.template.md и сохрани в target_dir/briefing.md.\n"
+    "5. Если briefing.md уже существует в target_dir — спроси у пользователя "
+    "перед перезаписью.\n"
+    "6. Перед заменой существующего SKILL.md/references/* делай бэкап "
+    "(имя.bak.<unix-timestamp>) — только для файлов, которые реально "
+    "отличаются от устанавливаемого содержимого."
+)
 
 
-def _install_skill_md(src: Path, dst: Path) -> str:
-    """
-    Устанавливает SKILL.md из template в memory dir.
+async def setup_yougile_skill_impl() -> dict:
+    """Возвращает манифест для установки персонального скилла агентом.
 
-    Если существующий SKILL.md идентичен template — skip.
-    Если отличается — бэкапит как SKILL.md.bak.<timestamp> и перезаписывает.
-    Если не существует — просто копирует.
+    MCP-сервер сам файлы не пишет (см. design B). Манифест содержит:
+    - questions: вопросы пользователю для briefing.md
+    - default_target_dir: рекомендуемое место установки
+    - files: список (uri, target, sha256) — где uri это MCP resource,
+      target — относительный путь записи, sha256 — для verification
+    - instructions: пошаговый протокол для агента
 
     Returns:
-        status: "installed" | "skipped_identical" | "replaced_with_backup"
+        dict с ключами questions, default_target_dir, files, instructions.
     """
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if not dst.exists():
-        shutil.copy2(str(src), str(dst))
-        return "installed"
-    if filecmp.cmp(str(src), str(dst), shallow=False):
-        return "skipped_identical"
-    backup = dst.with_name(f"{dst.name}.bak.{int(time.time())}")
-    shutil.copy2(str(dst), str(backup))
-    shutil.copy2(str(src), str(dst))
-    return "replaced_with_backup"
+    files = [
+        {
+            "uri": f"yougile://skill-template/{relpath}",
+            "target": relpath,
+            "sha256": compute_skill_file_sha256(relpath),
+        }
+        for relpath in SKILL_FILES
+    ]
 
-
-async def setup_yougile_skill_impl(
-    memory_dir: str | None = None,
-) -> dict:
-    """
-    Полная установка персонального SKILL'а в memory_dir.
-
-    Устанавливает:
-    - SKILL.md (главный файл, с авто-бэкапом старого если он отличается)
-    - references/ (5 справочных файлов)
-    - templates/ (шаблоны briefing.md и filters.md)
-
-    Возвращает список вопросов для агента, чтобы он мог наполнить briefing.md.
-    Не выполняет интерактивную логику — это делает агент (Claude).
-
-    Args:
-        memory_dir: Путь для установки SKILL'а.
-                    По умолчанию: ~/.agents/skills/yougile-personal/
-
-    Returns:
-        dict с ключами: questions, target_path, template_path, existing_briefing,
-                        instructions, skill_md_status, references_installed, templates_installed.
-    """
-    target_dir = Path(memory_dir) if memory_dir else _DEFAULT_MEMORY_DIR
-    target_path = target_dir / _BRIEFING_FILENAME
-
-    existing = target_path.exists() and target_path.stat().st_size > 0
-
-    template_path = _TEMPLATE_DIR / "templates" / "briefing.template.md"
-
-    # Устанавливаем SKILL.md с авто-бэкапом
-    skill_md_status = _install_skill_md(
-        src=_TEMPLATE_DIR / "SKILL.md",
-        dst=target_dir / "SKILL.md",
-    )
-
-    # Копируем references/ и templates/
-    refs_installed, refs_skipped = _copy_dir_idempotent(
-        src=_TEMPLATE_DIR / "references",
-        dst=target_dir / "references",
-    )
-    tpls_installed, tpls_skipped = _copy_dir_idempotent(
-        src=_TEMPLATE_DIR / "templates",
-        dst=target_dir / "templates",
-    )
-
-    result: dict = {
+    return {
         "questions": _SETUP_QUESTIONS,
-        "target_path": str(target_path),
-        "template_path": str(template_path),
-        "existing_briefing": existing,
-        "skill_md_status": skill_md_status,
-        "instructions": (
-            "Ask the user these questions one by one (or all at once). "
-            "Then call list_projects for each workspace to resolve project UUIDs. "
-            "Save the completed briefing.md to target_path. "
-            "If existing_briefing is True — ask user: 'Back up and overwrite?' before saving."
-        ),
-        "references_installed": refs_installed + refs_skipped,
-        "templates_installed": tpls_installed + tpls_skipped,
+        "default_target_dir": _DEFAULT_TARGET_DIR,
+        "files": files,
+        "instructions": _INSTRUCTIONS,
     }
-
-    if refs_skipped:
-        result["references_skipped_unchanged"] = refs_skipped
-    if tpls_skipped:
-        result["templates_skipped_unchanged"] = tpls_skipped
-
-    return result
